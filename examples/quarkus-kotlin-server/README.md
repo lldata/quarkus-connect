@@ -54,3 +54,19 @@ curl -sS -i -X POST http://localhost:8080/demo.v1.DemoService/Echo \
 ```
 
 Tokens: `demo-user` (full access), `demo-guest` (Echo only).
+
+## Media upload / range / polling
+
+See:
+
+- [docs/UPLOAD.md](docs/UPLOAD.md) — 100MB+ chunked unary, resume, idempotency, EDGE
+- [docs/LIVE_UPDATES.md](docs/LIVE_UPDATES.md) — why unary `ListMessages` polling for v1
+- [docs/INGRESS.md](docs/INGRESS.md) — ACA / Cloudflare, CORS, gzip, OTel
+
+```bash
+# After CompleteUpload:
+curl -i -H 'Range: bytes=0-1023' http://localhost:8080/media/<messageId>
+curl -i http://localhost:8080/media/<messageId>/poster
+```
+
+OpenTelemetry: `RpcTracingInterceptor` records one span per RPC (procedure + status, no payloads).

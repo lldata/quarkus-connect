@@ -29,6 +29,10 @@ dependencies {
     implementation(project(":quarkus-connect"))
     implementation("io.quarkus:quarkus-kotlin")
     implementation("io.quarkus:quarkus-grpc")
+    implementation("io.quarkus:quarkus-opentelemetry")
     implementation("org.jetbrains.kotlin:kotlin-stdlib")
     implementation("com.google.protobuf:protobuf-kotlin")
+
+    testImplementation("io.quarkus:quarkus-junit5")
+    testImplementation("io.rest-assured:rest-assured")
 }

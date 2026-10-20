@@ -36,4 +36,5 @@ dependencies {
     testImplementation("io.quarkus:quarkus-junit5")
     testImplementation("io.rest-assured:rest-assured")
     testImplementation("io.grpc:grpc-stub")
+    implementation("com.google.api.grpc:proto-google-common-protos")
 }

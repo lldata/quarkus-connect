@@ -32,8 +32,19 @@ buf generate
 
 `buf.gen.yaml` uses remote plugins: `protocolbuffers/dart` + `connectrpc/dart`.
 
+## Media upload + polling
+
+The home screen can **pick a file** and upload via chunked unary Connect RPCs
+(`MediaService`), persisting `client_request_id` in `shared_preferences` so a
+reload mid-upload can resume. **Poll messages** calls `ListMessages` (see server
+`docs/LIVE_UPDATES.md`).
+
+```bash
+buf generate   # after editing proto/media/v1/media.proto
+```
+
 ## Mobile note
 
 Web uses `package:connectrpc/web.dart` (`fetch`). For iOS/Android, switch the
 HTTP client import to `package:connectrpc/io.dart` or `http2.dart` — same
-`DemoServiceClient` and Connect JSON/binary transport (path to drop grpc-dart).
+generated clients and Connect JSON/binary transport (path to drop grpc-dart).

@@ -6,15 +6,15 @@ option java_multiple_files = true;
 option java_package = "io.github.lldata.connect.it.greet.v1";
 option java_outer_classname = "GreetProto";
 
-// Sample service used by integration tests — ordinary @GrpcService impl.
 service GreetService {
   rpc Greet(GreetRequest) returns (GreetResponse);
   rpc Fail(FailRequest) returns (FailResponse);
+  rpc FailWithDetails(FailRequest) returns (FailResponse);
+  rpc Slow(GreetRequest) returns (GreetResponse);
 }
 
 message GreetRequest {
   string name = 1;
-  // proto3 JSON encodes int64 as string
   int64 request_id = 2;
 }
 

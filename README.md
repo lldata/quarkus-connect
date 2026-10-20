@@ -18,7 +18,10 @@ Kotlin-first runtime with a Java-friendly SPI.
 | `@GrpcService` → gRPC-Web unary | Yes |
 | Native gRPC on same HTTP port | Yes (`quarkus.grpc.server.use-separate-server=false`) |
 | Global / method `ServerInterceptor`s on Connect | Yes |
-| Streaming (`application/connect+*`) | Not yet |
+| Streaming (`application/connect+*`) | Not yet (examples use unary poll — see `LIVE_UPDATES.md`) |
+| Chunked media upload example | Yes — `examples/quarkus-kotlin-server` |
+| Packed `google.rpc` error details | Yes |
+| Client deadlines (`connect-timeout-ms`) | Yes |
 | Quarkus-side Connect client | Out of scope for v1 |
 
 ## Coordinates

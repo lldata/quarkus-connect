@@ -1,16 +1,18 @@
+import 'dart:typed_data';
+
 import 'package:connectrpc/connect.dart' show Headers;
 import 'package:connectrpc/protobuf.dart';
 import 'package:connectrpc/protocol/connect.dart' as protocol;
+import 'package:file_picker/file_picker.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 
 import 'connect_http.dart';
 import 'src/gen/demo/v1/demo.connect.client.dart';
 import 'src/gen/demo/v1/demo.pb.dart';
+import 'src/gen/media/v1/media.pb.dart';
+import 'upload_session.dart';
 
-/// Flutter web client talking Connect (JSON) to examples/quarkus-kotlin-server.
-/// Same transport works for iOS/Android (swap `package:connectrpc/web.dart` for
-/// `package:connectrpc/io.dart` or `http2.dart` on mobile).
 void main() {
   runApp(const DemoApp());
 }
@@ -45,8 +47,10 @@ class _DemoHomePageState extends State<DemoHomePage> {
   String _log = '';
   int _seq = 0;
   bool _busy = false;
+  double _uploadProgress = 0;
+  Int64 _pollAfter = Int64.ZERO;
 
-  DemoServiceClient _client() {
+  DemoServiceClient _demoClient() {
     final transport = protocol.Transport(
       baseUrl: _baseUrlController.text.trim(),
       codec: const JsonCodec(),
@@ -54,6 +58,11 @@ class _DemoHomePageState extends State<DemoHomePage> {
     );
     return DemoServiceClient(transport);
   }
+
+  UploadSession _uploadSession() => UploadSession(
+        baseUrl: _baseUrlController.text.trim(),
+        token: _token,
+      );
 
   Headers _authHeaders() {
     final h = Headers();
@@ -65,7 +74,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     setState(() => _busy = true);
     try {
       _seq += 1;
-      final res = await _client().echo(
+      final res = await _demoClient().echo(
         EchoRequest(message: _messageController.text, clientSeq: Int64(_seq)),
         headers: _authHeaders(),
       );
@@ -83,13 +92,70 @@ class _DemoHomePageState extends State<DemoHomePage> {
   Future<void> _whoAmI() async {
     setState(() => _busy = true);
     try {
-      final res = await _client().whoAmI(
+      final res = await _demoClient().whoAmI(
         WhoAmIRequest(),
         headers: _authHeaders(),
       );
       setState(() => _log = 'WhoAmI OK\nsubject=${res.subject}');
     } catch (e) {
       setState(() => _log = 'WhoAmI error\n$e');
+    } finally {
+      setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pickAndUpload() async {
+    final result = await FilePicker.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    final bytes = file.bytes;
+    if (bytes == null) {
+      setState(() => _log = 'Could not read file bytes (web requires withData)');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _uploadProgress = 0;
+    });
+    try {
+      final msg = await _uploadSession().upload(
+        bytes: Uint8List.fromList(bytes),
+        filename: file.name,
+        contentType: file.extension == 'mp3' || file.extension == 'm4a'
+            ? 'audio/mpeg'
+            : 'application/octet-stream',
+        kind: file.extension == 'mp3' || file.extension == 'm4a'
+            ? MediaKind.MEDIA_KIND_AUDIO
+            : MediaKind.MEDIA_KIND_VIDEO,
+        durationMs: 0,
+        onProgress: (sent, total) {
+          setState(() => _uploadProgress = total == 0 ? 0 : sent / total);
+        },
+      );
+      setState(() {
+        _log =
+            'Upload OK\nid=${msg.messageId}\nsize=${msg.sizeBytes}\nmedia=${msg.mediaUrl}\nposter=${msg.posterUrl}\n'
+            'Resume tip: client_request_id is cleared after complete; interrupt mid-upload and reload to resume.';
+      });
+    } catch (e) {
+      setState(() => _log = 'Upload error\n$e\n(Reload the page to resume from GetUploadStatus.)');
+    } finally {
+      setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pollMessages() async {
+    setState(() => _busy = true);
+    try {
+      final res = await _uploadSession().listMessages(afterSequence: _pollAfter);
+      _pollAfter = res.latestSequence;
+      final buf = StringBuffer('ListMessages (polling)\nlatest=${res.latestSequence}\n');
+      for (final m in res.messages) {
+        buf.writeln('- ${m.messageId} ${m.filename} ${m.sizeBytes}B seq=${m.sequence}');
+      }
+      setState(() => _log = buf.toString());
+    } catch (e) {
+      setState(() => _log = 'ListMessages error\n$e');
     } finally {
       setState(() => _busy = false);
     }
@@ -141,23 +207,26 @@ class _DemoHomePageState extends State<DemoHomePage> {
               onChanged: (v) => setState(() => _token = v ?? 'demo-user'),
             ),
             const SizedBox(height: 16),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: _busy ? null : _echo,
-                    child: const Text('Echo'),
-                  ),
+                FilledButton(onPressed: _busy ? null : _echo, child: const Text('Echo')),
+                OutlinedButton(onPressed: _busy ? null : _whoAmI, child: const Text('WhoAmI')),
+                FilledButton.tonal(
+                  onPressed: _busy ? null : _pickAndUpload,
+                  child: const Text('Upload file (chunked)'),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _busy ? null : _whoAmI,
-                    child: const Text('WhoAmI'),
-                  ),
+                OutlinedButton(
+                  onPressed: _busy ? null : _pollMessages,
+                  child: const Text('Poll messages'),
                 ),
               ],
             ),
+            if (_busy && _uploadProgress > 0) ...[
+              const SizedBox(height: 12),
+              LinearProgressIndicator(value: _uploadProgress),
+            ],
             const SizedBox(height: 16),
             Expanded(
               child: DecoratedBox(

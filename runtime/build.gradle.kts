@@ -46,6 +46,7 @@ dependencies {
     implementation("io.grpc:grpc-api")
     implementation("io.grpc:grpc-protobuf")
     implementation("io.grpc:grpc-stub")
+    implementation("com.google.api.grpc:proto-google-common-protos")
 
     annotationProcessor("io.quarkus:quarkus-extension-processor:$quarkusVersion")
 }

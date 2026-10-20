@@ -14,7 +14,11 @@ import java.nio.charset.StandardCharsets
 object ProtobufCodecSupport {
 
     private val jsonParser: JsonFormat.Parser = JsonFormat.parser().ignoringUnknownFields()
-    private val jsonPrinter: JsonFormat.Printer = JsonFormat.printer().omittingInsignificantWhitespace()
+    // Always print fields (including defaults) so clients see int64 "0" and bool false —
+    // clearer for resume offsets and flags over Connect JSON.
+    private val jsonPrinter: JsonFormat.Printer = JsonFormat.printer()
+        .omittingInsignificantWhitespace()
+        .includingDefaultValueFields()
 
     fun <T : Message> parse(bytes: ByteArray, type: Class<T>, codec: ConnectCodec): T {
         return try {

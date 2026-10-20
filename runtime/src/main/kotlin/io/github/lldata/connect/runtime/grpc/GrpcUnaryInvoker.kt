@@ -3,6 +3,7 @@ package io.github.lldata.connect.runtime.grpc
 import com.google.protobuf.Message
 import io.github.lldata.connect.spi.ConnectCallContext
 import io.github.lldata.connect.spi.ConnectException
+import io.grpc.Context
 import io.grpc.Metadata
 import io.grpc.MethodDescriptor
 import io.grpc.ServerCall
@@ -13,6 +14,7 @@ import io.grpc.ServerMethodDefinition
 import io.grpc.ServerServiceDefinition
 import io.grpc.Status
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
@@ -61,74 +63,85 @@ object GrpcUnaryInvoker {
         val latch = CountDownLatch(1)
 
         val headers = toMetadata(context.requestHeaders)
-        val call = object : ServerCall<ReqT, RespT>() {
-            private var closed = false
-
-            override fun request(numMessages: Int) = Unit
-
-            override fun sendHeaders(headers: Metadata) {
-                for (key in headers.keys()) {
-                    if (key.endsWith(Metadata.BINARY_HEADER_SUFFIX)) {
-                        val metaKey = Metadata.Key.of(key, Metadata.BINARY_BYTE_MARSHALLER)
-                        val value = headers.get(metaKey) ?: continue
-                        context.responseHeader(key, java.util.Base64.getEncoder().encodeToString(value))
-                    } else {
-                        val metaKey = Metadata.Key.of(key, Metadata.ASCII_STRING_MARSHALLER)
-                        val value = headers.get(metaKey) ?: continue
-                        context.responseHeader(key, value)
-                    }
-                }
-            }
-
-            override fun sendMessage(message: RespT) {
-                responseRef.set(message)
-            }
-
-            override fun close(status: Status, trailers: Metadata) {
-                if (closed) return
-                closed = true
-                for (key in trailers.keys()) {
-                    if (key.endsWith(Metadata.BINARY_HEADER_SUFFIX)) {
-                        val metaKey = Metadata.Key.of(key, Metadata.BINARY_BYTE_MARSHALLER)
-                        val value = trailers.get(metaKey) ?: continue
-                        context.responseTrailer(key, java.util.Base64.getEncoder().encodeToString(value))
-                    } else {
-                        val metaKey = Metadata.Key.of(key, Metadata.ASCII_STRING_MARSHALLER)
-                        val value = trailers.get(metaKey) ?: continue
-                        context.responseTrailer(key, value)
-                    }
-                }
-                if (!status.isOk) {
-                    errorRef.set(status.asRuntimeException(trailers))
-                }
-                latch.countDown()
-            }
-
-            override fun isCancelled(): Boolean = false
-
-            override fun getMethodDescriptor(): MethodDescriptor<ReqT, RespT> = descriptor
-        }
-
-        val listener = handler.startCall(call, headers)
-        listener.onReady()
-        listener.onMessage(request)
-        listener.onHalfClose()
-
         val timeoutMs = context.timeoutMs ?: 30_000L
-        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-            throw ConnectException(
-                io.github.lldata.connect.spi.ConnectCode.DEADLINE_EXCEEDED,
-                "RPC timed out after ${timeoutMs}ms",
-            )
-        }
+        val deadlineCtx = Context.current().withDeadlineAfter(
+            timeoutMs,
+            TimeUnit.MILLISECONDS,
+            DEADLINE_SCHEDULER,
+        )
+        val previous = deadlineCtx.attach()
+        try {
+            val call = object : ServerCall<ReqT, RespT>() {
+                private var closed = false
 
-        errorRef.get()?.let { throw GrpcStatusMapping.toConnectException(it) }
-        @Suppress("UNCHECKED_CAST")
-        return responseRef.get()
-            ?: throw ConnectException(
-                io.github.lldata.connect.spi.ConnectCode.INTERNAL,
-                "gRPC handler completed without a response message",
-            )
+                override fun request(numMessages: Int) = Unit
+
+                override fun sendHeaders(headers: Metadata) {
+                    for (key in headers.keys()) {
+                        if (key.endsWith(Metadata.BINARY_HEADER_SUFFIX)) {
+                            val metaKey = Metadata.Key.of(key, Metadata.BINARY_BYTE_MARSHALLER)
+                            val value = headers.get(metaKey) ?: continue
+                            context.responseHeader(key, java.util.Base64.getEncoder().encodeToString(value))
+                        } else {
+                            val metaKey = Metadata.Key.of(key, Metadata.ASCII_STRING_MARSHALLER)
+                            val value = headers.get(metaKey) ?: continue
+                            context.responseHeader(key, value)
+                        }
+                    }
+                }
+
+                override fun sendMessage(message: RespT) {
+                    responseRef.set(message)
+                }
+
+                override fun close(status: Status, trailers: Metadata) {
+                    if (closed) return
+                    closed = true
+                    for (key in trailers.keys()) {
+                        if (key.endsWith(Metadata.BINARY_HEADER_SUFFIX)) {
+                            val metaKey = Metadata.Key.of(key, Metadata.BINARY_BYTE_MARSHALLER)
+                            val value = trailers.get(metaKey) ?: continue
+                            context.responseTrailer(key, java.util.Base64.getEncoder().encodeToString(value))
+                        } else {
+                            val metaKey = Metadata.Key.of(key, Metadata.ASCII_STRING_MARSHALLER)
+                            val value = trailers.get(metaKey) ?: continue
+                            context.responseTrailer(key, value)
+                        }
+                    }
+                    if (!status.isOk) {
+                        errorRef.set(status.asRuntimeException(trailers))
+                    }
+                    latch.countDown()
+                }
+
+                override fun isCancelled(): Boolean = deadlineCtx.isCancelled
+
+                override fun getMethodDescriptor(): MethodDescriptor<ReqT, RespT> = descriptor
+            }
+
+            val listener = handler.startCall(call, headers)
+            listener.onReady()
+            listener.onMessage(request)
+            listener.onHalfClose()
+
+            if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                throw ConnectException(
+                    io.github.lldata.connect.spi.ConnectCode.DEADLINE_EXCEEDED,
+                    "RPC timed out after ${timeoutMs}ms",
+                )
+            }
+
+            errorRef.get()?.let { throw GrpcStatusMapping.toConnectException(it) }
+            @Suppress("UNCHECKED_CAST")
+            return responseRef.get()
+                ?: throw ConnectException(
+                    io.github.lldata.connect.spi.ConnectCode.INTERNAL,
+                    "gRPC handler completed without a response message",
+                )
+        } finally {
+            deadlineCtx.detach(previous)
+            deadlineCtx.cancel(null)
+        }
     }
 
     private fun toMetadata(headers: Map<String, List<String>>): Metadata {
@@ -150,6 +163,10 @@ object GrpcUnaryInvoker {
             }
         }
         return metadata
+    }
+
+    private val DEADLINE_SCHEDULER = Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "connect-deadline").apply { isDaemon = true }
     }
 
     private val HOP_BY_HOP = setOf(

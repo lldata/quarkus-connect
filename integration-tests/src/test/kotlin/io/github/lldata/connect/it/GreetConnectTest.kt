@@ -182,6 +182,38 @@ class GreetConnectTest {
     }
 
     @Test
+    fun `connect-timeout-ms yields deadline_exceeded`() {
+        given()
+            .header("Content-Type", "application/json")
+            .header("connect-protocol-version", "1")
+            .header("connect-timeout-ms", "200")
+            .header("Authorization", auth)
+            .body("""{"name":"slow"}""")
+            .`when`()
+            .post("/greet.v1.GreetService/Slow")
+            .then()
+            .statusCode(504)
+            .body("code", equalTo("deadline_exceeded"))
+    }
+
+    @Test
+    fun `google rpc ErrorInfo details appear in Connect JSON`() {
+        given()
+            .header("Content-Type", "application/json")
+            .header("connect-protocol-version", "1")
+            .header("Authorization", auth)
+            .body("""{"code":"invalid_argument","message":"bad field"}""")
+            .`when`()
+            .post("/greet.v1.GreetService/FailWithDetails")
+            .then()
+            .statusCode(400)
+            .body("code", equalTo("invalid_argument"))
+            .body("message", equalTo("bad field"))
+            .body("details[0].type", equalTo("google.rpc.ErrorInfo"))
+            .body("details[0].value", org.hamcrest.Matchers.notNullValue())
+    }
+
+    @Test
     fun `grpc-web unauthenticated`() {
         val request = GreetRequest.newBuilder().setName("Web").build()
         val framed = grpcWebDataFrame(request.toByteArray())
