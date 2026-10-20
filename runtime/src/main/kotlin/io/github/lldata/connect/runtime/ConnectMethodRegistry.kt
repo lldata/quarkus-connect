@@ -2,6 +2,7 @@ package io.github.lldata.connect.runtime
 
 import com.google.protobuf.Message
 import io.github.lldata.connect.runtime.grpc.GrpcServiceConnectBridge
+import io.github.lldata.connect.spi.ConnectServerStreamMethod
 import io.github.lldata.connect.spi.ConnectUnaryMethod
 import jakarta.annotation.PostConstruct
 import jakarta.enterprise.context.ApplicationScoped
@@ -9,9 +10,8 @@ import jakarta.enterprise.inject.Instance
 import jakarta.inject.Inject
 
 /**
- * Indexes unary Connect procedures from:
- * 1. Explicit CDI [ConnectUnaryMethod] beans (legacy / low-level SPI)
- * 2. Bridged `@GrpcService` methods via [GrpcServiceConnectBridge]
+ * Indexes Connect unary and server-streaming procedures from CDI SPI beans and
+ * bridged `@GrpcService` methods.
  */
 @ApplicationScoped
 class ConnectMethodRegistry {
@@ -20,39 +20,63 @@ class ConnectMethodRegistry {
     private lateinit var methods: Instance<ConnectUnaryMethod<*, *>>
 
     @Inject
+    private lateinit var streamMethods: Instance<ConnectServerStreamMethod<*, *>>
+
+    @Inject
     private lateinit var grpcBridge: GrpcServiceConnectBridge
 
     private lateinit var byProcedure: Map<String, ConnectUnaryMethod<out Message, out Message>>
+    private lateinit var streamsByProcedure: Map<String, ConnectServerStreamMethod<out Message, out Message>>
 
     @PostConstruct
     fun init() {
-        val map = linkedMapOf<String, ConnectUnaryMethod<out Message, out Message>>()
-
+        val unary = linkedMapOf<String, ConnectUnaryMethod<out Message, out Message>>()
         for (method in methods) {
-            put(map, method)
+            putUnary(unary, method)
         }
         for (method in grpcBridge.bridgedMethods()) {
-            put(map, method)
+            putUnary(unary, method)
         }
+        byProcedure = unary.toMap()
 
-        byProcedure = map.toMap()
+        val streams = linkedMapOf<String, ConnectServerStreamMethod<out Message, out Message>>()
+        for (method in streamMethods) {
+            putStream(streams, method)
+        }
+        for (method in grpcBridge.bridgedStreamMethods()) {
+            putStream(streams, method)
+        }
+        streamsByProcedure = streams.toMap()
     }
 
     fun find(procedure: String): ConnectUnaryMethod<out Message, out Message>? =
         byProcedure[normalizeProcedure(procedure)]
 
+    fun findStream(procedure: String): ConnectServerStreamMethod<out Message, out Message>? =
+        streamsByProcedure[normalizeProcedure(procedure)]
+
     fun procedures(): Set<String> = byProcedure.keys
 
-    private fun put(
+    fun streamProcedures(): Set<String> = streamsByProcedure.keys
+
+    private fun putUnary(
         map: MutableMap<String, ConnectUnaryMethod<out Message, out Message>>,
         method: ConnectUnaryMethod<*, *>,
     ) {
         val procedure = normalizeProcedure(method.procedure())
-        require(procedure !in map) {
-            "Duplicate Connect procedure registration: /$procedure"
-        }
+        require(procedure !in map) { "Duplicate Connect procedure registration: /$procedure" }
         @Suppress("UNCHECKED_CAST")
         map[procedure] = method as ConnectUnaryMethod<out Message, out Message>
+    }
+
+    private fun putStream(
+        map: MutableMap<String, ConnectServerStreamMethod<out Message, out Message>>,
+        method: ConnectServerStreamMethod<*, *>,
+    ) {
+        val procedure = normalizeProcedure(method.procedure())
+        require(procedure !in map) { "Duplicate Connect stream procedure registration: /$procedure" }
+        @Suppress("UNCHECKED_CAST")
+        map[procedure] = method as ConnectServerStreamMethod<out Message, out Message>
     }
 
     companion object {

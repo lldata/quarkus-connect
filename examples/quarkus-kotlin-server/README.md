@@ -5,8 +5,9 @@ Quarkus Kotlin app whose only service beans are ordinary `@GrpcService` implemen
 
 | Protocol | Content-Type | Transport |
 | --- | --- | --- |
-| Connect JSON | `application/json` | HTTP/1.1 or HTTP/2 |
-| Connect binary | `application/proto` | HTTP/1.1 or HTTP/2 |
+| Connect JSON (unary) | `application/json` | HTTP/1.1 or HTTP/2 |
+| Connect binary (unary) | `application/proto` | HTTP/1.1 or HTTP/2 |
+| Connect streaming | `application/connect+json` / `+proto` | HTTP/1.1 or HTTP/2 |
 | gRPC-Web | `application/grpc-web+proto` | HTTP/1.1 or HTTP/2 |
 | gRPC | `application/grpc` | HTTP/2 (Quarkus Vert.x unified server) |
 
@@ -55,12 +56,12 @@ curl -sS -i -X POST http://localhost:8080/demo.v1.DemoService/Echo \
 
 Tokens: `demo-user` (full access), `demo-guest` (Echo only).
 
-## Media upload / range / polling
+## Media upload / range / live updates
 
 See:
 
 - [docs/UPLOAD.md](docs/UPLOAD.md) — 100MB+ chunked unary, resume, idempotency, EDGE
-- [docs/LIVE_UPDATES.md](docs/LIVE_UPDATES.md) — why unary `ListMessages` polling for v1
+- [docs/LIVE_UPDATES.md](docs/LIVE_UPDATES.md) — Connect `WatchMessages` streaming + `ListMessages` polling
 - [docs/INGRESS.md](docs/INGRESS.md) — ACA / Cloudflare, CORS, gzip, OTel
 
 ```bash

@@ -29,10 +29,8 @@ class ConnectRouteRegistrar {
             .handler(BodyHandler.create())
             .handler(handler)
 
-        if (registry.procedures().isEmpty()) {
-            log.info("Connect RPC enabled; no unary methods registered yet")
-        } else {
-            log.info("Connect RPC enabled; procedures=${registry.procedures()}")
-        }
+        log.info(
+            "Connect RPC enabled; unary=${registry.procedures()} streams=${registry.streamProcedures()}",
+        )
     }
 }

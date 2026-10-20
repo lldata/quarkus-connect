@@ -10,13 +10,16 @@ import io.github.lldata.connect.examples.media.v1.GetUploadStatusRequest
 import io.github.lldata.connect.examples.media.v1.GetUploadStatusResponse
 import io.github.lldata.connect.examples.media.v1.ListMessagesRequest
 import io.github.lldata.connect.examples.media.v1.ListMessagesResponse
+import io.github.lldata.connect.examples.media.v1.Message
 import io.github.lldata.connect.examples.media.v1.MutinyMediaServiceGrpc
 import io.github.lldata.connect.examples.media.v1.UploadChunkRequest
 import io.github.lldata.connect.examples.media.v1.UploadChunkResponse
+import io.github.lldata.connect.examples.media.v1.WatchMessagesRequest
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
 import io.quarkus.grpc.GrpcService
 import io.smallrye.common.annotation.Blocking
+import io.smallrye.mutiny.Multi
 import io.smallrye.mutiny.Uni
 import jakarta.inject.Inject
 
@@ -126,6 +129,12 @@ class MediaGrpcService : MutinyMediaServiceGrpc.MediaServiceImplBase() {
                 .setLatestSequence(store.latestSequence())
                 .build()
         }
+
+    override fun watchMessages(request: WatchMessagesRequest): Multi<Message> {
+        val limit = if (request.limit == 0) 50 else request.limit
+        val messages = store.listMessages(request.afterSequence, limit)
+        return Multi.createFrom().iterable(messages)
+    }
 
     private fun mapError(e: Exception): StatusRuntimeException = when (e) {
         is UploadStore.NotFound -> Status.NOT_FOUND.withDescription(e.message).asRuntimeException()

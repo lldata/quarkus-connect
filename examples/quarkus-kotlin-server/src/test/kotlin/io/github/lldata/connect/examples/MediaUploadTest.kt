@@ -6,7 +6,9 @@ import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.greaterThanOrEqualTo
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.nio.ByteBuffer
 import java.util.Base64
 import java.util.UUID
 
@@ -177,5 +179,45 @@ class MediaUploadTest {
             .then()
             .statusCode(200)
             .body("messages.size()", greaterThanOrEqualTo(1))
+
+        // Connect server streaming catch-up (WatchMessages)
+        val watchJson = """{"afterSequence":"0","limit":10}""".toByteArray()
+        val watchReq = ByteArray(5 + watchJson.size)
+        watchReq[0] = 0x00
+        watchReq[1] = ((watchJson.size ushr 24) and 0xff).toByte()
+        watchReq[2] = ((watchJson.size ushr 16) and 0xff).toByte()
+        watchReq[3] = ((watchJson.size ushr 8) and 0xff).toByte()
+        watchReq[4] = (watchJson.size and 0xff).toByte()
+        System.arraycopy(watchJson, 0, watchReq, 5, watchJson.size)
+
+        val streamRaw = given()
+            .header("Content-Type", "application/connect+json")
+            .header("connect-protocol-version", "1")
+            .header("Authorization", auth)
+            .body(watchReq)
+            .`when`()
+            .post("/media.v1.MediaService/WatchMessages")
+            .then()
+            .statusCode(200)
+            .header("Content-Type", equalTo("application/connect+json"))
+            .extract()
+            .asByteArray()
+
+        var offsetStream = 0
+        var sawEnd = false
+        var sawMessage = false
+        while (offsetStream + 5 <= streamRaw.size) {
+            val flag = streamRaw[offsetStream].toInt() and 0xff
+            val len = ByteBuffer.wrap(streamRaw, offsetStream + 1, 4).int
+            val payload = String(streamRaw, offsetStream + 5, len)
+            offsetStream += 5 + len
+            if (flag and 0x02 != 0) {
+                sawEnd = true
+            } else if (payload.contains(messageId)) {
+                sawMessage = true
+            }
+        }
+        assertTrue(sawEnd)
+        assertTrue(sawMessage)
     }
 }

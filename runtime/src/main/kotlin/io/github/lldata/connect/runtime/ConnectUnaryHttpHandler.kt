@@ -1,6 +1,7 @@
 package io.github.lldata.connect.runtime
 
 import com.google.protobuf.Message
+import io.github.lldata.connect.protocol.ConnectEnvelope
 import io.github.lldata.connect.protocol.ConnectErrorJson
 import io.github.lldata.connect.protocol.ConnectProtocolConstants
 import io.github.lldata.connect.protocol.ProtobufCodecSupport
@@ -9,6 +10,8 @@ import io.github.lldata.connect.runtime.grpc.GrpcWebFraming
 import io.github.lldata.connect.spi.ConnectCodec
 import io.github.lldata.connect.spi.ConnectCode
 import io.github.lldata.connect.spi.ConnectException
+import io.github.lldata.connect.spi.ConnectServerStreamMethod
+import io.github.lldata.connect.spi.ConnectStreamObserver
 import io.github.lldata.connect.spi.ConnectUnaryMethod
 import io.vertx.core.Handler
 import io.vertx.core.http.HttpHeaders
@@ -16,12 +19,13 @@ import io.vertx.core.http.HttpMethod
 import io.vertx.ext.web.RoutingContext
 import org.jboss.logging.Logger
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Vert.x route handler for Connect unary and gRPC-Web unary on the Quarkus HTTP port.
+ * Vert.x route handler for Connect unary, Connect server streaming, and gRPC-Web unary
+ * on the Quarkus HTTP port.
  *
  * Native `application/grpc` is left to quarkus-grpc (`use-separate-server=false`).
- * Handler bodies run via `executeBlocking` so bridged Mutiny `@GrpcService` methods can await.
  */
 class ConnectUnaryHttpHandler(
     private val registry: ConnectMethodRegistry,
@@ -44,6 +48,32 @@ class ConnectUnaryHttpHandler(
         }
 
         val procedure = ConnectMethodRegistry.normalizeProcedure(request.path())
+
+        if (wire == WireProtocol.CONNECT_STREAM) {
+            val stream = registry.findStream(procedure)
+            if (stream == null) {
+                // Unknown stream procedure — do not steal unrelated routes.
+                if (registry.find(procedure) != null) {
+                    writeConnectError(
+                        ctx,
+                        ConnectException(
+                            ConnectCode.UNIMPLEMENTED,
+                            "Procedure /$procedure is unary; use application/proto or application/json",
+                        ),
+                    )
+                } else {
+                    ctx.next()
+                }
+                return
+            }
+            if (request.method() != HttpMethod.POST) {
+                writeConnectError(ctx, ConnectException.invalidArgument("Connect streaming requires POST"))
+                return
+            }
+            handleConnectStream(ctx, procedure, stream, contentType)
+            return
+        }
+
         val method = registry.find(procedure)
         if (method == null) {
             ctx.next()
@@ -61,9 +91,112 @@ class ConnectUnaryHttpHandler(
 
         when (wire) {
             WireProtocol.CONNECT -> handleConnectPost(ctx, procedure, method, contentType)
+            WireProtocol.CONNECT_STREAM -> Unit // handled above
             WireProtocol.GRPC_WEB -> handleGrpcWebPost(ctx, procedure, method, contentType)
             WireProtocol.GRPC_NATIVE -> ctx.next()
         }
+    }
+
+    private fun handleConnectStream(
+        ctx: RoutingContext,
+        procedure: String,
+        method: ConnectServerStreamMethod<out Message, out Message>,
+        contentType: String?,
+    ) {
+        val version = ctx.request().getHeader(ConnectProtocolConstants.PROTOCOL_VERSION_HEADER)
+        if (version != null && version != ConnectProtocolConstants.PROTOCOL_VERSION) {
+            writeConnectStreamError(
+                ctx,
+                ConnectException.invalidArgument("Unsupported connect-protocol-version: $version"),
+                contentType,
+            )
+            return
+        }
+
+        val codec = ConnectCodec.fromWireName(ConnectEnvelope.codecWireName(contentType))
+            ?: ConnectCodec.PROTO
+        val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val headers = collectHeaders(ctx)
+        val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
+
+        val requestBytes = try {
+            ConnectEnvelope.decodeFirstDataMessage(body)
+        } catch (e: ConnectException) {
+            writeConnectStreamError(ctx, e, contentType)
+            return
+        }
+
+        val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs)
+        val responseCt = ConnectEnvelope.normalizeContentType(contentType)
+        val response = ctx.response()
+            .setStatusCode(200)
+            .putHeader(HttpHeaders.CONTENT_TYPE, responseCt)
+            .setChunked(true)
+
+        val finished = AtomicBoolean(false)
+
+        fun writeEnvelope(bytes: ByteArray) {
+            ctx.vertx().runOnContext {
+                if (!response.ended()) {
+                    response.write(io.vertx.core.buffer.Buffer.buffer(bytes))
+                }
+            }
+        }
+
+        fun endWith(error: ConnectException?) {
+            if (!finished.compareAndSet(false, true)) return
+            val end = ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers())
+            ctx.vertx().runOnContext {
+                if (!response.ended()) {
+                    response.end(io.vertx.core.buffer.Buffer.buffer(end))
+                }
+            }
+        }
+
+        ctx.vertx().executeBlocking(
+            java.util.concurrent.Callable {
+                @Suppress("UNCHECKED_CAST")
+                val typed = method as ConnectServerStreamMethod<Message, Message>
+                val requestMessage = ProtobufCodecSupport.parse(requestBytes, typed.requestType(), codec)
+                val observer = object : ConnectStreamObserver<Message> {
+                    override fun onNext(value: Message) {
+                        val payload = ProtobufCodecSupport.encode(value, codec)
+                        writeEnvelope(ConnectEnvelope.encodeData(payload))
+                    }
+
+                    override fun onError(error: ConnectException) {
+                        endWith(error)
+                    }
+
+                    override fun onCompleted() {
+                        endWith(null)
+                    }
+                }
+                typed.handle(requestMessage, callContext, observer)
+                null
+            },
+            false,
+        ).onComplete { ar ->
+            if (ar.failed() && finished.compareAndSet(false, true)) {
+                val error = GrpcStatusMapping.toConnectException(ar.cause())
+                val end = ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers())
+                if (!response.ended()) {
+                    response.end(io.vertx.core.buffer.Buffer.buffer(end))
+                }
+            }
+        }
+    }
+
+    private fun writeConnectStreamError(
+        ctx: RoutingContext,
+        error: ConnectException,
+        contentType: String?,
+    ) {
+        // Streaming errors use HTTP 200 + end-stream envelope (protocol requirement).
+        val response = ctx.response()
+            .setStatusCode(200)
+            .putHeader(HttpHeaders.CONTENT_TYPE, ConnectEnvelope.normalizeContentType(contentType))
+        response.end(io.vertx.core.buffer.Buffer.buffer(ConnectEnvelope.encodeEndStream(error)))
     }
 
     private fun handleConnectPost(
@@ -190,14 +323,14 @@ class ConnectUnaryHttpHandler(
                 when (wire) {
                     WireProtocol.CONNECT -> writeConnectSuccess(ctx, codec, callContext, ar.result())
                     WireProtocol.GRPC_WEB -> writeGrpcWebSuccess(ctx, callContext, ar.result(), grpcWebContentType)
-                    WireProtocol.GRPC_NATIVE -> Unit
+                    WireProtocol.CONNECT_STREAM, WireProtocol.GRPC_NATIVE -> Unit
                 }
             } else {
                 val error = GrpcStatusMapping.toConnectException(ar.cause())
                 when (wire) {
                     WireProtocol.CONNECT -> writeConnectError(ctx, error, callContext)
                     WireProtocol.GRPC_WEB -> writeGrpcWebError(ctx, error, grpcWebContentType, callContext)
-                    WireProtocol.GRPC_NATIVE -> Unit
+                    WireProtocol.CONNECT_STREAM, WireProtocol.GRPC_NATIVE -> Unit
                 }
             }
         }
@@ -323,6 +456,7 @@ class ConnectUnaryHttpHandler(
             if (method == HttpMethod.GET) return WireProtocol.CONNECT
             val media = contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
             return when {
+                ConnectEnvelope.isConnectStreamingContentType(media) -> WireProtocol.CONNECT_STREAM
                 media.startsWith("application/grpc-web") -> WireProtocol.GRPC_WEB
                 media == "application/grpc" || media.startsWith("application/grpc+") -> WireProtocol.GRPC_NATIVE
                 else -> WireProtocol.CONNECT

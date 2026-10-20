@@ -214,6 +214,52 @@ class GreetConnectTest {
     }
 
     @Test
+    fun `connect server streaming envelopes`() {
+        // Request: one Connect envelope with JSON payload {"name":"Stream"}
+        val json = """{"name":"Stream"}""".toByteArray()
+        val req = ByteArray(5 + json.size)
+        req[0] = 0x00
+        req[1] = ((json.size ushr 24) and 0xff).toByte()
+        req[2] = ((json.size ushr 16) and 0xff).toByte()
+        req[3] = ((json.size ushr 8) and 0xff).toByte()
+        req[4] = (json.size and 0xff).toByte()
+        System.arraycopy(json, 0, req, 5, json.size)
+
+        val raw = given()
+            .header("Content-Type", "application/connect+json")
+            .header("connect-protocol-version", "1")
+            .header("Authorization", auth)
+            .body(req)
+            .`when`()
+            .post("/greet.v1.GreetService/StreamGreetings")
+            .then()
+            .statusCode(200)
+            .header("Content-Type", equalTo("application/connect+json"))
+            .extract()
+            .asByteArray()
+
+        val messages = mutableListOf<String>()
+        var offset = 0
+        var sawEnd = false
+        while (offset + 5 <= raw.size) {
+            val flag = raw[offset].toInt() and 0xff
+            val len = ByteBuffer.wrap(raw, offset + 1, 4).int
+            val payload = String(raw, offset + 5, len)
+            offset += 5 + len
+            if (flag and 0x02 != 0) {
+                sawEnd = true
+                assertTrue(payload.contains("{}") || payload.contains("metadata") || !payload.contains("\"error\""))
+            } else {
+                messages += payload
+            }
+        }
+        assertTrue(sawEnd)
+        assertEquals(3, messages.size)
+        assertTrue(messages[0].contains("Hello #1, Stream!"))
+        assertTrue(messages[2].contains("Hello #3, Stream!"))
+    }
+
+    @Test
     fun `grpc-web unauthenticated`() {
         val request = GreetRequest.newBuilder().setName("Web").build()
         val framed = grpcWebDataFrame(request.toByteArray())
