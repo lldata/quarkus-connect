@@ -63,8 +63,8 @@ curl -sS 'http://localhost:8080/demo.v1.DemoService/Echo?connect=v1&encoding=jso
 ```
 
 See **`examples/quarkus-kotlin-server`**, **`examples/flutter-web-client`**,
-[docs/SPI.md](docs/SPI.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and
-[docs/COMPLIANCE.md](docs/COMPLIANCE.md).
+[docs/SPI.md](docs/SPI.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+[docs/COMPLIANCE.md](docs/COMPLIANCE.md), and [docs/INTEROP.md](docs/INTEROP.md).
 
 ## Content types
 

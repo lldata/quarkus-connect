@@ -1,6 +1,7 @@
 package io.github.lldata.connect.runtime.grpc
 
 import com.google.protobuf.Message
+import io.github.lldata.connect.runtime.DefaultConnectCallContext
 import io.github.lldata.connect.spi.ConnectBidiStreamMethod
 import io.github.lldata.connect.spi.ConnectCallContext
 import io.github.lldata.connect.spi.ConnectStreamObserver
@@ -25,7 +26,8 @@ class GrpcBridgedBidiStreamMethod<ReqT : Message, RespT : Message>(
     override fun responseType(): Class<RespT> = responseClass
 
     override fun handle(requests: List<ReqT>, context: ConnectCallContext, response: ConnectStreamObserver<RespT>) {
-        GrpcBidiStreamInvoker.invoke(method, interceptors, requests, context, response)
+        val control = (context as? DefaultConnectCallContext)?.streamCallControl
+        GrpcBidiStreamInvoker.invoke(method, interceptors, requests, context, response, control)
     }
 
     companion object {

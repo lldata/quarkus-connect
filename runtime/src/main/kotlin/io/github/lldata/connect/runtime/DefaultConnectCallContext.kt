@@ -8,6 +8,8 @@ class DefaultConnectCallContext(
     override val codec: ConnectCodec,
     override val requestHeaders: Map<String, List<String>>,
     override val timeoutMs: Long?,
+    /** Present for Connect streaming calls so HTTP disconnect can cancel gRPC work. */
+    val streamCallControl: StreamCallControl? = null,
 ) : ConnectCallContext {
 
     private val responseHeaders = linkedMapOf<String, MutableList<String>>()

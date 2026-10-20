@@ -39,5 +39,7 @@ in-repo so external users see the same floor.
 - **Brotli (`br`) / zstd** — deferred: JDK has no brotli API; portable codecs need native libs
   (e.g. brotli4j + platform classifiers), which is a poor fit for a Central-published extension.
   Prefer edge/Quarkus HTTP `br` for whole responses; Connect message coding stays `gzip` + `identity`.
+- Official [connectrpc/conformance](https://github.com/connectrpc/conformance) ConformanceService host
+  (see [INTEROP.md](INTEROP.md)); curl matrix + ITs cover day-to-day gates
 - Maven Central secrets + first tagged release (`docs/RELEASE.md`)
 - Server-side ffmpeg thumbnails

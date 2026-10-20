@@ -21,6 +21,8 @@ version is tagged.
 - Connect **client streaming** for `@GrpcService` `CLIENT_STREAMING` methods
 - Connect **bidi streaming** for `@GrpcService` `BIDI_STREAMING` methods (buffered vertical slice)
 - Document why Connect message-coding **brotli (`br`)** is deferred (native libs; gzip remains)
+- Curl interop matrix (`scripts/interop-matrix.sh` + Gradle `interopMatrix` in `check`) and streaming cancel/`connect-timeout-ms` hardening
+- `docs/INTEROP.md` — official connect conformance tracked as follow-up
 
 ### Notes
 - Version remains `999-SNAPSHOT` until a human tags a release (see `docs/RELEASE.md`)
