@@ -20,6 +20,7 @@ dependencies {
     implementation("io.quarkus:quarkus-arc-deployment")
     implementation("io.quarkus:quarkus-vertx-http-deployment")
     implementation("io.quarkus:quarkus-kotlin-deployment")
+    implementation("io.quarkus:quarkus-grpc-deployment")
 
     annotationProcessor("io.quarkus:quarkus-extension-processor:$quarkusVersion")
 

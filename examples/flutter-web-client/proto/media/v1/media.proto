@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package media.v1;
+
+option java_multiple_files = true;
+option java_package = "io.github.lldata.connect.examples.media.v1";
+option java_outer_classname = "MediaProto";
+
+// Chunked unary upload + message listing (polling). No client streaming required.
+// Same @GrpcService is exposed as gRPC + Connect + gRPC-Web.
+service MediaService {
+  // Create or resume an upload keyed by client_request_id (idempotent).
+  rpc BeginUpload(BeginUploadRequest) returns (BeginUploadResponse);
+
+  // Append one chunk. Re-sending the same chunk_index with identical bytes is a no-op.
+  rpc UploadChunk(UploadChunkRequest) returns (UploadChunkResponse);
+
+  // Query resume offset after drop / app restart.
+  rpc GetUploadStatus(GetUploadStatusRequest) returns (GetUploadStatusResponse);
+
+  // Finalize into a Message. Idempotent for the same client_request_id.
+  rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse);
+
+  rpc GetMessage(GetMessageRequest) returns (GetMessageResponse);
+
+  // Polling live updates: return messages newer than after_sequence.
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+}
+
+enum MediaKind {
+  MEDIA_KIND_UNSPECIFIED = 0;
+  MEDIA_KIND_VIDEO = 1;
+  MEDIA_KIND_AUDIO = 2;
+}
+
+message BeginUploadRequest {
+  // Stable id chosen by the client (UUID). Retries never create a second upload.
+  string client_request_id = 1;
+  string filename = 2;
+  string content_type = 3;
+  int64 total_size_bytes = 4;
+  MediaKind kind = 5;
+}
+
+message BeginUploadResponse {
+  string upload_id = 1;
+  string client_request_id = 2;
+  // Next byte offset the server expects (0 for new uploads).
+  int64 next_offset = 3;
+  bool resumed = 4;
+}
+
+message UploadChunkRequest {
+  string client_request_id = 1;
+  int64 offset = 2;
+  bytes data = 3;
+  // Monotonic chunk index from 0; used with offset for idempotent retries.
+  int32 chunk_index = 4;
+}
+
+message UploadChunkResponse {
+  int64 bytes_received = 1;
+  int64 next_offset = 2;
+}
+
+message GetUploadStatusRequest {
+  string client_request_id = 1;
+}
+
+message GetUploadStatusResponse {
+  string upload_id = 1;
+  int64 bytes_received = 2;
+  int64 next_offset = 3;
+  int64 total_size_bytes = 4;
+  bool completed = 5;
+  string message_id = 6;
+}
+
+message CompleteUploadRequest {
+  string client_request_id = 1;
+  // Client-supplied metadata (no server-side ffmpeg required for the proof).
+  int64 duration_ms = 2;
+  bytes poster_jpeg = 3;
+}
+
+message CompleteUploadResponse {
+  Message message = 1;
+}
+
+message GetMessageRequest {
+  string message_id = 1;
+}
+
+message GetMessageResponse {
+  Message message = 1;
+}
+
+message ListMessagesRequest {
+  // Return messages with sequence > after_sequence (0 = from start).
+  int64 after_sequence = 1;
+  int32 limit = 2;
+}
+
+message ListMessagesResponse {
+  repeated Message messages = 1;
+  int64 latest_sequence = 2;
+}
+
+message Message {
+  string message_id = 1;
+  int64 sequence = 2;
+  MediaKind kind = 3;
+  string filename = 4;
+  string content_type = 5;
+  int64 size_bytes = 6;
+  int64 duration_ms = 7;
+  // Relative URLs on the same Quarkus HTTP port.
+  string media_url = 8;
+  string poster_url = 9;
+  string client_request_id = 10;
+  int64 created_unix_ms = 11;
+}

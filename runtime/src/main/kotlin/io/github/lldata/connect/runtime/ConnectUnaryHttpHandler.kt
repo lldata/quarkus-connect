@@ -4,6 +4,8 @@ import com.google.protobuf.Message
 import io.github.lldata.connect.protocol.ConnectErrorJson
 import io.github.lldata.connect.protocol.ConnectProtocolConstants
 import io.github.lldata.connect.protocol.ProtobufCodecSupport
+import io.github.lldata.connect.runtime.grpc.GrpcStatusMapping
+import io.github.lldata.connect.runtime.grpc.GrpcWebFraming
 import io.github.lldata.connect.spi.ConnectCodec
 import io.github.lldata.connect.spi.ConnectCode
 import io.github.lldata.connect.spi.ConnectException
@@ -16,11 +18,10 @@ import org.jboss.logging.Logger
 import java.nio.charset.StandardCharsets
 
 /**
- * Vert.x route handler implementing Connect unary POST (+ optional GET for idempotent methods later).
+ * Vert.x route handler for Connect unary and gRPC-Web unary on the Quarkus HTTP port.
  *
- * Content types: [ConnectCodec.PROTO] / [ConnectCodec.JSON].
- * Errors: non-200 + `application/json` Connect error body.
- * Trailers: emitted as ordinary response headers prefixed with `trailer-`.
+ * Native `application/grpc` is left to quarkus-grpc (`use-separate-server=false`).
+ * Handler bodies run via `executeBlocking` so bridged Mutiny `@GrpcService` methods can await.
  */
 class ConnectUnaryHttpHandler(
     private val registry: ConnectMethodRegistry,
@@ -31,57 +32,81 @@ class ConnectUnaryHttpHandler(
     override fun handle(ctx: RoutingContext) {
         val request = ctx.request()
         if (request.method() != HttpMethod.POST && request.method() != HttpMethod.GET) {
-            writeError(ctx, ConnectException(ConnectCode.UNIMPLEMENTED, "Only GET and POST are supported for Connect unary"))
+            writeConnectError(ctx, ConnectException(ConnectCode.UNIMPLEMENTED, "Only GET and POST are supported"))
+            return
+        }
+
+        val contentType = request.getHeader(HttpHeaders.CONTENT_TYPE)
+        val wire = detectWireProtocol(contentType, request.method())
+        if (wire == WireProtocol.GRPC_NATIVE) {
+            ctx.next()
             return
         }
 
         val procedure = ConnectMethodRegistry.normalizeProcedure(request.path())
         val method = registry.find(procedure)
         if (method == null) {
-            // Do not steal unrelated Vert.x / REST routes.
             ctx.next()
             return
         }
 
         if (request.method() == HttpMethod.GET) {
-            handleGet(ctx, procedure, method)
+            if (wire != WireProtocol.CONNECT) {
+                writeConnectError(ctx, ConnectException.invalidArgument("GET is only supported for Connect unary"))
+                return
+            }
+            handleConnectGet(ctx, procedure, method)
             return
         }
 
-        val version = request.getHeader(ConnectProtocolConstants.PROTOCOL_VERSION_HEADER)
+        when (wire) {
+            WireProtocol.CONNECT -> handleConnectPost(ctx, procedure, method, contentType)
+            WireProtocol.GRPC_WEB -> handleGrpcWebPost(ctx, procedure, method, contentType)
+            WireProtocol.GRPC_NATIVE -> ctx.next()
+        }
+    }
+
+    private fun handleConnectPost(
+        ctx: RoutingContext,
+        procedure: String,
+        method: ConnectUnaryMethod<out Message, out Message>,
+        contentType: String?,
+    ) {
+        val version = ctx.request().getHeader(ConnectProtocolConstants.PROTOCOL_VERSION_HEADER)
         if (version != null && version != ConnectProtocolConstants.PROTOCOL_VERSION) {
-            writeError(ctx, ConnectException.invalidArgument("Unsupported connect-protocol-version: $version"))
+            writeConnectError(ctx, ConnectException.invalidArgument("Unsupported connect-protocol-version: $version"))
             return
         }
 
-        val codec = ConnectCodec.fromContentType(request.getHeader(HttpHeaders.CONTENT_TYPE))
+        val codec = ConnectCodec.fromContentType(contentType)
         if (codec == null) {
             ctx.response()
                 .setStatusCode(415)
                 .putHeader(HttpHeaders.CONTENT_TYPE, ConnectProtocolConstants.CONTENT_TYPE_JSON)
-                .end(ConnectErrorJson.toJson(ConnectException.invalidArgument("Unsupported Content-Type; use application/proto or application/json")))
+                .end(
+                    ConnectErrorJson.toJson(
+                        ConnectException.invalidArgument("Unsupported Content-Type; use application/proto or application/json"),
+                    ),
+                )
             return
         }
 
-        val encoding = request.getHeader(HttpHeaders.CONTENT_ENCODING)
+        val encoding = ctx.request().getHeader(HttpHeaders.CONTENT_ENCODING)
         if (encoding != null && !encoding.equals("identity", ignoreCase = true)) {
-            writeError(
+            writeConnectError(
                 ctx,
-                ConnectException(
-                    ConnectCode.UNIMPLEMENTED,
-                    "Unsupported Content-Encoding '$encoding'; supported: identity",
-                ),
+                ConnectException(ConnectCode.UNIMPLEMENTED, "Unsupported Content-Encoding '$encoding'; supported: identity"),
             )
             return
         }
 
-        val timeoutMs = parseTimeout(request.getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
         val headers = collectHeaders(ctx)
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
-        invokeMethod(ctx, procedure, method, codec, headers, timeoutMs, body)
+        invokeAsync(ctx, procedure, method, codec, headers, timeoutMs, body, WireProtocol.CONNECT)
     }
 
-    private fun handleGet(
+    private fun handleConnectGet(
         ctx: RoutingContext,
         procedure: String,
         method: ConnectUnaryMethod<out Message, out Message>,
@@ -89,20 +114,16 @@ class ConnectUnaryHttpHandler(
         val params = ctx.queryParams()
         val connectVersion = params.get("connect")
         if (connectVersion != null && connectVersion != ConnectProtocolConstants.PROTOCOL_VERSION) {
-            writeError(ctx, ConnectException.invalidArgument("Unsupported connect query version: $connectVersion"))
+            writeConnectError(ctx, ConnectException.invalidArgument("Unsupported connect query version: $connectVersion"))
             return
         }
 
-        val codec = ConnectCodec.fromWireName(params.get("encoding"))
-            ?: ConnectCodec.JSON
+        val codec = ConnectCodec.fromWireName(params.get("encoding")) ?: ConnectCodec.JSON
         val compression = params.get("compression") ?: "identity"
         if (!compression.equals("identity", ignoreCase = true)) {
-            writeError(
+            writeConnectError(
                 ctx,
-                ConnectException(
-                    ConnectCode.UNIMPLEMENTED,
-                    "Unsupported compression '$compression'; supported: identity",
-                ),
+                ConnectException(ConnectCode.UNIMPLEMENTED, "Unsupported compression '$compression'; supported: identity"),
             )
             return
         }
@@ -116,15 +137,33 @@ class ConnectUnaryHttpHandler(
                 messageParam.toByteArray(StandardCharsets.UTF_8)
             }
         } catch (e: IllegalArgumentException) {
-            writeError(ctx, ConnectException.invalidArgument("Invalid base64 message: ${e.message}"))
+            writeConnectError(ctx, ConnectException.invalidArgument("Invalid base64 message: ${e.message}"))
             return
         }
 
         val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
-        invokeMethod(ctx, procedure, method, codec, collectHeaders(ctx), timeoutMs, body)
+        invokeAsync(ctx, procedure, method, codec, collectHeaders(ctx), timeoutMs, body, WireProtocol.CONNECT)
     }
 
-    private fun invokeMethod(
+    private fun handleGrpcWebPost(
+        ctx: RoutingContext,
+        procedure: String,
+        method: ConnectUnaryMethod<out Message, out Message>,
+        contentType: String?,
+    ) {
+        val codec = grpcWebCodec(contentType)
+        val timeoutMs = parseTimeout(ctx.request().getHeader("grpc-timeout"))
+            ?: parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val body = try {
+            GrpcWebFraming.decodeRequestMessage(ctx.body().buffer()?.bytes ?: ByteArray(0))
+        } catch (e: ConnectException) {
+            writeGrpcWebError(ctx, e, contentType)
+            return
+        }
+        invokeAsync(ctx, procedure, method, codec, collectHeaders(ctx), timeoutMs, body, WireProtocol.GRPC_WEB, contentType)
+    }
+
+    private fun invokeAsync(
         ctx: RoutingContext,
         procedure: String,
         method: ConnectUnaryMethod<out Message, out Message>,
@@ -132,28 +171,51 @@ class ConnectUnaryHttpHandler(
         headers: Map<String, List<String>>,
         timeoutMs: Long?,
         body: ByteArray,
+        wire: WireProtocol,
+        grpcWebContentType: String? = null,
     ) {
         val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs)
-        try {
-            @Suppress("UNCHECKED_CAST")
-            val typed = method as ConnectUnaryMethod<Message, Message>
-            val requestMessage = ProtobufCodecSupport.parse(body, typed.requestType(), codec)
-            val responseMessage = typed.handle(requestMessage, callContext)
-            val responseBytes = ProtobufCodecSupport.encode(responseMessage, codec)
-
-            val response = ctx.response().setStatusCode(200)
-            response.putHeader(HttpHeaders.CONTENT_TYPE, codec.contentType)
-            writeMetadata(response, callContext)
-            response.end(io.vertx.core.buffer.Buffer.buffer(responseBytes))
-        } catch (e: ConnectException) {
-            writeError(ctx, e, callContext)
-        } catch (e: Exception) {
-            log.error("Unhandled Connect handler failure for /$procedure", e)
-            writeError(ctx, ConnectException.internal(e.message ?: "Internal error", e), callContext)
+        val future = ctx.vertx().executeBlocking(
+            java.util.concurrent.Callable {
+                @Suppress("UNCHECKED_CAST")
+                val typed = method as ConnectUnaryMethod<Message, Message>
+                val requestMessage = ProtobufCodecSupport.parse(body, typed.requestType(), codec)
+                val responseMessage = typed.handle(requestMessage, callContext)
+                ProtobufCodecSupport.encode(responseMessage, codec)
+            },
+            false,
+        )
+        future.onComplete { ar ->
+            if (ar.succeeded()) {
+                when (wire) {
+                    WireProtocol.CONNECT -> writeConnectSuccess(ctx, codec, callContext, ar.result())
+                    WireProtocol.GRPC_WEB -> writeGrpcWebSuccess(ctx, callContext, ar.result(), grpcWebContentType)
+                    WireProtocol.GRPC_NATIVE -> Unit
+                }
+            } else {
+                val error = GrpcStatusMapping.toConnectException(ar.cause())
+                when (wire) {
+                    WireProtocol.CONNECT -> writeConnectError(ctx, error, callContext)
+                    WireProtocol.GRPC_WEB -> writeGrpcWebError(ctx, error, grpcWebContentType, callContext)
+                    WireProtocol.GRPC_NATIVE -> Unit
+                }
+            }
         }
     }
 
-    private fun writeError(
+    private fun writeConnectSuccess(
+        ctx: RoutingContext,
+        codec: ConnectCodec,
+        callContext: DefaultConnectCallContext,
+        responseBytes: ByteArray,
+    ) {
+        val response = ctx.response().setStatusCode(200)
+        response.putHeader(HttpHeaders.CONTENT_TYPE, codec.contentType)
+        writeMetadata(response, callContext)
+        response.end(io.vertx.core.buffer.Buffer.buffer(responseBytes))
+    }
+
+    private fun writeConnectError(
         ctx: RoutingContext,
         error: ConnectException,
         callContext: DefaultConnectCallContext? = null,
@@ -168,6 +230,49 @@ class ConnectUnaryHttpHandler(
             writeMetadata(response, callContext)
         }
         response.end(ConnectErrorJson.toJson(error))
+    }
+
+    private fun writeGrpcWebSuccess(
+        ctx: RoutingContext,
+        callContext: DefaultConnectCallContext,
+        protoBytes: ByteArray,
+        contentType: String?,
+    ) {
+        val trailers = callContext.snapshotTrailers().mapValues { it.value.firstOrNull() ?: "" }
+            .filterValues { it.isNotEmpty() }
+        val body = GrpcWebFraming.encodeUnarySuccess(protoBytes, trailers)
+        val response = ctx.response().setStatusCode(200)
+        response.putHeader(HttpHeaders.CONTENT_TYPE, normalizeGrpcWebContentType(contentType))
+        for ((name, values) in callContext.snapshotHeaders()) {
+            for (value in values) {
+                response.putHeader(name, value)
+            }
+        }
+        response.end(io.vertx.core.buffer.Buffer.buffer(body))
+    }
+
+    private fun writeGrpcWebError(
+        ctx: RoutingContext,
+        error: ConnectException,
+        contentType: String?,
+        callContext: DefaultConnectCallContext? = null,
+    ) {
+        if (ctx.response().headWritten()) {
+            log.warn("Cannot write gRPC-Web error; response already started: ${error.code.wireName}")
+            return
+        }
+        val statusCode = GrpcStatusMapping.toGrpcStatus(error.code).value()
+        val body = GrpcWebFraming.encodeUnaryError(statusCode, error.message)
+        val response = ctx.response().setStatusCode(200)
+        response.putHeader(HttpHeaders.CONTENT_TYPE, normalizeGrpcWebContentType(contentType))
+        if (callContext != null) {
+            for ((name, values) in callContext.snapshotHeaders()) {
+                for (value in values) {
+                    response.putHeader(name, value)
+                }
+            }
+        }
+        response.end(io.vertx.core.buffer.Buffer.buffer(body))
     }
 
     private fun writeMetadata(
@@ -196,6 +301,49 @@ class ConnectUnaryHttpHandler(
 
     private fun parseTimeout(raw: String?): Long? {
         if (raw.isNullOrBlank()) return null
-        return raw.toLongOrNull()?.takeIf { it > 0 }
+        // grpc-timeout uses units (e.g. 10S); connect-timeout-ms is milliseconds.
+        val msMatch = raw.toLongOrNull()
+        if (msMatch != null) return msMatch.takeIf { it > 0 }
+        val unit = raw.lastOrNull() ?: return null
+        val amount = raw.dropLast(1).toLongOrNull() ?: return null
+        val millis = when (unit) {
+            'n' -> amount / 1_000_000
+            'u' -> amount / 1_000
+            'm' -> amount
+            'S' -> amount * 1_000
+            'M' -> amount * 60_000
+            'H' -> amount * 3_600_000
+            else -> return null
+        }
+        return millis.takeIf { it > 0 }
+    }
+
+    companion object {
+        fun detectWireProtocol(contentType: String?, method: HttpMethod): WireProtocol {
+            if (method == HttpMethod.GET) return WireProtocol.CONNECT
+            val media = contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+            return when {
+                media.startsWith("application/grpc-web") -> WireProtocol.GRPC_WEB
+                media == "application/grpc" || media.startsWith("application/grpc+") -> WireProtocol.GRPC_NATIVE
+                else -> WireProtocol.CONNECT
+            }
+        }
+
+        fun grpcWebCodec(contentType: String?): ConnectCodec {
+            val media = contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+            return when {
+                media.endsWith("+json") || media.contains("grpc-web-text") -> ConnectCodec.JSON
+                else -> ConnectCodec.PROTO
+            }
+        }
+
+        fun normalizeGrpcWebContentType(contentType: String?): String {
+            val media = contentType?.substringBefore(';')?.trim()?.lowercase()
+            return when {
+                media.isNullOrBlank() -> "application/grpc-web+proto"
+                media == "application/grpc-web" -> "application/grpc-web+proto"
+                else -> media
+            }
+        }
     }
 }

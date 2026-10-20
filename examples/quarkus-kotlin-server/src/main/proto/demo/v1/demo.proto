@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package demo.v1;
+
+option java_multiple_files = true;
+option java_package = "io.github.lldata.connect.examples.demo.v1";
+option java_outer_classname = "DemoProto";
+
+// Shared with examples/flutter-web-client (same .proto → Dart + Kotlin stubs).
+service DemoService {
+  rpc Echo(EchoRequest) returns (EchoResponse);
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
+}
+
+message EchoRequest {
+  string message = 1;
+  int64 client_seq = 2;
+}
+
+message EchoResponse {
+  string message = 1;
+  int64 client_seq = 2;
+  int64 server_time_unix_ms = 3;
+}
+
+message WhoAmIRequest {}
+
+message WhoAmIResponse {
+  string subject = 1;
+}
