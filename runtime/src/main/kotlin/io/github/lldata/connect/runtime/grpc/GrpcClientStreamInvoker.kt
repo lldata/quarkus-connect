@@ -136,7 +136,7 @@ object GrpcClientStreamInvoker {
         "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
         "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length",
         "content-type", "accept", "accept-encoding", "content-encoding",
-        "connect-protocol-version", "connect-timeout-ms", "connect-content-encoding",
+        "connect-protocol-version", "connect-content-encoding",
         "connect-accept-encoding",
     )
 }
