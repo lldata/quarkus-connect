@@ -56,15 +56,14 @@ object ConnectEnvelope {
 
     /**
      * Decode the first data envelope from a Connect streaming request body.
+     * When the compressed flag is set, [requestEncoding] (from `connect-content-encoding`)
+     * is used to decompress the payload.
      */
-    fun decodeFirstDataMessage(body: ByteArray): ByteArray {
+    fun decodeFirstDataMessage(body: ByteArray, requestEncoding: String? = ConnectCompression.IDENTITY): ByteArray {
         if (body.size < 5) {
             throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Truncated Connect envelope")
         }
         val flag = body[0].toInt() and 0xff
-        if (flag and FLAG_COMPRESSED != 0) {
-            throw ConnectException(ConnectCode.UNIMPLEMENTED, "Compressed Connect envelopes are not supported")
-        }
         if (flag and FLAG_END_STREAM != 0) {
             throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Request stream must not send end-stream")
         }
@@ -72,7 +71,31 @@ object ConnectEnvelope {
         if (length < 0 || 5 + length > body.size) {
             throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Invalid Connect envelope length: $length")
         }
-        return body.copyOfRange(5, 5 + length)
+        val payload = body.copyOfRange(5, 5 + length)
+        if (flag and FLAG_COMPRESSED != 0) {
+            val encoding = ConnectCompression.normalize(requestEncoding)
+            if (encoding == ConnectCompression.IDENTITY) {
+                throw ConnectException(
+                    ConnectCode.INVALID_ARGUMENT,
+                    "Compressed envelope requires connect-content-encoding (not identity)",
+                )
+            }
+            return ConnectCompression.decompress(encoding, payload)
+        }
+        return payload
+    }
+
+    /**
+     * Encode a data envelope, optionally compressing with [responseEncoding] (gzip).
+     * Returns the wire bytes; compressed flag is set when compression is applied.
+     */
+    fun encodeDataMaybeCompressed(payload: ByteArray, responseEncoding: String?): ByteArray {
+        val encoding = ConnectCompression.normalize(responseEncoding)
+        if (encoding == ConnectCompression.IDENTITY || payload.isEmpty()) {
+            return encodeData(payload, compressed = false)
+        }
+        val compressed = ConnectCompression.compress(encoding, payload)
+        return encodeData(compressed, compressed = true)
     }
 
     fun isConnectStreamingContentType(contentType: String?): Boolean {

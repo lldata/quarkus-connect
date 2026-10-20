@@ -1,6 +1,7 @@
 package io.github.lldata.connect.runtime
 
 import com.google.protobuf.Message
+import io.github.lldata.connect.protocol.ConnectCompression
 import io.github.lldata.connect.protocol.ConnectEnvelope
 import io.github.lldata.connect.protocol.ConnectErrorJson
 import io.github.lldata.connect.protocol.ConnectProtocolConstants
@@ -121,19 +122,20 @@ class ConnectUnaryHttpHandler(
             return
         }
 
-        // Spec: Streaming-Content-Encoding uses the same rules as unary Content-Encoding.
-        val streamEncoding = ctx.request().getHeader(ConnectProtocolConstants.STREAMING_CONTENT_ENCODING_HEADER)
-        if (streamEncoding != null && !streamEncoding.equals(ConnectProtocolConstants.IDENTITY_ENCODING, ignoreCase = true)) {
-            writeConnectStreamError(
-                ctx,
-                ConnectException(
-                    ConnectCode.UNIMPLEMENTED,
-                    "Unsupported connect-content-encoding '$streamEncoding'; supported: identity",
-                ),
-                contentType,
+        val requestEncoding = try {
+            ConnectCompression.requireSupported(
+                ctx.request().getHeader(ConnectProtocolConstants.STREAMING_CONTENT_ENCODING_HEADER),
+                "connect-content-encoding",
             )
+        } catch (e: ConnectException) {
+            writeConnectStreamError(ctx, e, contentType)
             return
         }
+
+        val responseEncoding = ConnectCompression.negotiateResponseEncoding(
+            ctx.request().getHeader(ConnectProtocolConstants.STREAMING_ACCEPT_ENCODING_HEADER),
+            requestEncoding,
+        )
 
         val codec = ConnectCodec.fromWireName(ConnectEnvelope.codecWireName(contentType))
             ?: ConnectCodec.PROTO
@@ -142,9 +144,9 @@ class ConnectUnaryHttpHandler(
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
 
         val requestBytes = try {
-            ConnectEnvelope.decodeFirstDataMessage(body)
+            ConnectEnvelope.decodeFirstDataMessage(body, requestEncoding)
         } catch (e: ConnectException) {
-            writeConnectStreamError(ctx, e, contentType)
+            writeConnectStreamError(ctx, e, contentType, responseEncoding)
             return
         }
 
@@ -153,8 +155,11 @@ class ConnectUnaryHttpHandler(
         val response = ctx.response()
             .setStatusCode(200)
             .putHeader(HttpHeaders.CONTENT_TYPE, responseCt)
-            .putHeader(ConnectProtocolConstants.STREAMING_ACCEPT_ENCODING_HEADER, ConnectProtocolConstants.IDENTITY_ENCODING)
-            .setChunked(true)
+            .putHeader(ConnectProtocolConstants.STREAMING_ACCEPT_ENCODING_HEADER, ConnectCompression.ACCEPT_ADVERTISEMENT)
+        if (responseEncoding != ConnectCompression.IDENTITY) {
+            response.putHeader(ConnectProtocolConstants.STREAMING_CONTENT_ENCODING_HEADER, responseEncoding)
+        }
+        response.setChunked(true)
 
         val finished = AtomicBoolean(false)
 
@@ -168,6 +173,7 @@ class ConnectUnaryHttpHandler(
 
         fun endWith(error: ConnectException?) {
             if (!finished.compareAndSet(false, true)) return
+            // End-stream envelopes stay uncompressed (small JSON); compressed bit left unset.
             val end = ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers())
             ctx.vertx().runOnContext {
                 if (!response.ended()) {
@@ -184,7 +190,7 @@ class ConnectUnaryHttpHandler(
                 val observer = object : ConnectStreamObserver<Message> {
                     override fun onNext(value: Message) {
                         val payload = ProtobufCodecSupport.encode(value, codec)
-                        writeEnvelope(ConnectEnvelope.encodeData(payload))
+                        writeEnvelope(ConnectEnvelope.encodeDataMaybeCompressed(payload, responseEncoding))
                     }
 
                     override fun onError(error: ConnectException) {
@@ -214,12 +220,16 @@ class ConnectUnaryHttpHandler(
         ctx: RoutingContext,
         error: ConnectException,
         contentType: String?,
+        responseEncoding: String = ConnectCompression.IDENTITY,
     ) {
         // Streaming errors use HTTP 200 + end-stream envelope (protocol requirement).
         val response = ctx.response()
             .setStatusCode(200)
             .putHeader(HttpHeaders.CONTENT_TYPE, ConnectEnvelope.normalizeContentType(contentType))
-            .putHeader(ConnectProtocolConstants.STREAMING_ACCEPT_ENCODING_HEADER, ConnectProtocolConstants.IDENTITY_ENCODING)
+            .putHeader(ConnectProtocolConstants.STREAMING_ACCEPT_ENCODING_HEADER, ConnectCompression.ACCEPT_ADVERTISEMENT)
+        if (responseEncoding != ConnectCompression.IDENTITY) {
+            response.putHeader(ConnectProtocolConstants.STREAMING_CONTENT_ENCODING_HEADER, responseEncoding)
+        }
         response.end(io.vertx.core.buffer.Buffer.buffer(ConnectEnvelope.encodeEndStream(error)))
     }
 
@@ -248,22 +258,41 @@ class ConnectUnaryHttpHandler(
             return
         }
 
-        val encoding = ctx.request().getHeader(HttpHeaders.CONTENT_ENCODING)
-        if (encoding != null && !encoding.equals(ConnectProtocolConstants.IDENTITY_ENCODING, ignoreCase = true)) {
-            writeConnectError(
-                ctx,
-                ConnectException(
-                    ConnectCode.UNIMPLEMENTED,
-                    "Unsupported Content-Encoding '$encoding'; supported: identity",
-                ),
+        val requestEncoding = try {
+            ConnectCompression.requireSupported(
+                ctx.request().getHeader(HttpHeaders.CONTENT_ENCODING),
+                "Content-Encoding",
             )
+        } catch (e: ConnectException) {
+            writeConnectError(ctx, e)
             return
         }
 
+        val responseEncoding = ConnectCompression.negotiateResponseEncoding(
+            ctx.request().getHeader(HttpHeaders.ACCEPT_ENCODING),
+            requestEncoding,
+        )
+
         val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
         val headers = collectHeaders(ctx)
-        val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
-        invokeAsync(ctx, procedure, method, codec, headers, timeoutMs, body, WireProtocol.CONNECT)
+        val rawBody = ctx.body().buffer()?.bytes ?: ByteArray(0)
+        val body = try {
+            ConnectCompression.decompress(requestEncoding, rawBody)
+        } catch (e: ConnectException) {
+            writeConnectError(ctx, e)
+            return
+        }
+        invokeAsync(
+            ctx,
+            procedure,
+            method,
+            codec,
+            headers,
+            timeoutMs,
+            body,
+            WireProtocol.CONNECT,
+            responseEncoding = responseEncoding,
+        )
     }
 
     private fun handleConnectGet(
@@ -294,7 +323,7 @@ class ConnectUnaryHttpHandler(
             val response = ctx.response()
                 .setStatusCode(415)
                 .putHeader(HttpHeaders.CONTENT_TYPE, ConnectProtocolConstants.CONTENT_TYPE_JSON)
-                .putHeader(HttpHeaders.ACCEPT_ENCODING, ConnectProtocolConstants.IDENTITY_ENCODING)
+                .putHeader(HttpHeaders.ACCEPT_ENCODING, ConnectCompression.ACCEPT_ADVERTISEMENT)
             response.headers().add(HttpHeaders.VARY, "Accept-Encoding")
             response.end(
                 ConnectErrorJson.toJson(
@@ -305,23 +334,23 @@ class ConnectUnaryHttpHandler(
             )
             return
         }
-        val compression = params.get("compression") ?: ConnectProtocolConstants.IDENTITY_ENCODING
-        if (!compression.equals(ConnectProtocolConstants.IDENTITY_ENCODING, ignoreCase = true)) {
-            writeConnectError(
-                ctx,
-                ConnectException(
-                    ConnectCode.UNIMPLEMENTED,
-                    "Unsupported compression '$compression'; supported: identity",
-                ),
-                varyAcceptEncoding = true,
-            )
+
+        val requestEncoding = try {
+            ConnectCompression.requireSupported(params.get("compression"), "compression")
+        } catch (e: ConnectException) {
+            writeConnectError(ctx, e, varyAcceptEncoding = true)
             return
         }
+
+        val responseEncoding = ConnectCompression.negotiateResponseEncoding(
+            ctx.request().getHeader(HttpHeaders.ACCEPT_ENCODING),
+            requestEncoding,
+        )
 
         val messageParam = params.get("message") ?: ""
         // Spec: Base64-Query → "base64=1" (URL-safe base64, typically unpadded for proto).
         val useBase64 = params.get("base64") == "1" || params.get("base64").equals("true", ignoreCase = true)
-        val body = try {
+        val rawMessage = try {
             if (useBase64) {
                 val normalized = messageParam.replace(' ', '+')
                 java.util.Base64.getUrlDecoder().decode(normalized)
@@ -337,6 +366,13 @@ class ConnectUnaryHttpHandler(
             return
         }
 
+        val body = try {
+            ConnectCompression.decompress(requestEncoding, rawMessage)
+        } catch (e: ConnectException) {
+            writeConnectError(ctx, e, varyAcceptEncoding = true)
+            return
+        }
+
         val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
         invokeAsync(
             ctx,
@@ -348,6 +384,7 @@ class ConnectUnaryHttpHandler(
             body,
             WireProtocol.CONNECT,
             varyAcceptEncoding = true,
+            responseEncoding = responseEncoding,
         )
     }
 
@@ -380,6 +417,7 @@ class ConnectUnaryHttpHandler(
         wire: WireProtocol,
         grpcWebContentType: String? = null,
         varyAcceptEncoding: Boolean = false,
+        responseEncoding: String = ConnectCompression.IDENTITY,
     ) {
         val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs)
         val future = ctx.vertx().executeBlocking(
@@ -401,6 +439,7 @@ class ConnectUnaryHttpHandler(
                         callContext,
                         ar.result(),
                         varyAcceptEncoding,
+                        responseEncoding,
                     )
                     WireProtocol.GRPC_WEB -> writeGrpcWebSuccess(ctx, callContext, ar.result(), grpcWebContentType)
                     WireProtocol.CONNECT_STREAM, WireProtocol.GRPC_NATIVE -> Unit
@@ -408,7 +447,13 @@ class ConnectUnaryHttpHandler(
             } else {
                 val error = GrpcStatusMapping.toConnectException(ar.cause())
                 when (wire) {
-                    WireProtocol.CONNECT -> writeConnectError(ctx, error, callContext, varyAcceptEncoding)
+                    WireProtocol.CONNECT -> writeConnectError(
+                        ctx,
+                        error,
+                        callContext,
+                        varyAcceptEncoding,
+                        responseEncoding,
+                    )
                     WireProtocol.GRPC_WEB -> writeGrpcWebError(ctx, error, grpcWebContentType, callContext)
                     WireProtocol.CONNECT_STREAM, WireProtocol.GRPC_NATIVE -> Unit
                 }
@@ -422,15 +467,20 @@ class ConnectUnaryHttpHandler(
         callContext: DefaultConnectCallContext,
         responseBytes: ByteArray,
         varyAcceptEncoding: Boolean = false,
+        responseEncoding: String = ConnectCompression.IDENTITY,
     ) {
+        val wireBody = ConnectCompression.compress(responseEncoding, responseBytes)
         val response = ctx.response().setStatusCode(200)
         response.putHeader(HttpHeaders.CONTENT_TYPE, codec.contentType)
-        response.putHeader(HttpHeaders.ACCEPT_ENCODING, ConnectProtocolConstants.IDENTITY_ENCODING)
+        response.putHeader(HttpHeaders.ACCEPT_ENCODING, ConnectCompression.ACCEPT_ADVERTISEMENT)
+        if (responseEncoding != ConnectCompression.IDENTITY) {
+            response.putHeader(HttpHeaders.CONTENT_ENCODING, responseEncoding)
+        }
         if (varyAcceptEncoding) {
             response.headers().add(HttpHeaders.VARY, "Accept-Encoding")
         }
         writeMetadata(response, callContext)
-        response.end(io.vertx.core.buffer.Buffer.buffer(responseBytes))
+        response.end(io.vertx.core.buffer.Buffer.buffer(wireBody))
     }
 
     private fun writeConnectError(
@@ -438,21 +488,27 @@ class ConnectUnaryHttpHandler(
         error: ConnectException,
         callContext: DefaultConnectCallContext? = null,
         varyAcceptEncoding: Boolean = false,
+        responseEncoding: String = ConnectCompression.IDENTITY,
     ) {
         if (ctx.response().headWritten()) {
             log.warn("Cannot write Connect error; response already started: ${error.code.wireName}")
             return
         }
+        val json = ConnectErrorJson.toJson(error).toByteArray(StandardCharsets.UTF_8)
+        val wireBody = ConnectCompression.compress(responseEncoding, json)
         val response = ctx.response().setStatusCode(error.code.httpStatus)
         response.putHeader(HttpHeaders.CONTENT_TYPE, ConnectProtocolConstants.CONTENT_TYPE_JSON)
-        response.putHeader(HttpHeaders.ACCEPT_ENCODING, ConnectProtocolConstants.IDENTITY_ENCODING)
+        response.putHeader(HttpHeaders.ACCEPT_ENCODING, ConnectCompression.ACCEPT_ADVERTISEMENT)
+        if (responseEncoding != ConnectCompression.IDENTITY) {
+            response.putHeader(HttpHeaders.CONTENT_ENCODING, responseEncoding)
+        }
         if (varyAcceptEncoding) {
             response.headers().add(HttpHeaders.VARY, "Accept-Encoding")
         }
         if (callContext != null) {
             writeMetadata(response, callContext)
         }
-        response.end(ConnectErrorJson.toJson(error))
+        response.end(io.vertx.core.buffer.Buffer.buffer(wireBody))
     }
 
     private fun writeGrpcWebSuccess(

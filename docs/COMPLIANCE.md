@@ -12,8 +12,8 @@ in-repo so external users see the same floor.
 | Unary trailers as `trailer-*` | **Yes** | |
 | `connect-protocol-version: 1` | **Yes** | Unsupported → `invalid_argument` |
 | `connect-timeout-ms` / deadlines | **Yes** | |
-| Content-Encoding / compression | **identity only** | Unary `Content-Encoding`, GET `compression=`, stream `connect-content-encoding` → `unimplemented` if not identity (Quarkus may gzip HTTP responses separately) |
-| `Accept-Encoding: identity` advertised | **Yes** | Unary responses; streaming uses `connect-accept-encoding: identity` |
+| Content-Encoding / compression | **identity + gzip** | Unary `Content-Encoding` / GET `compression=` / stream `connect-content-encoding`; response negotiation via `Accept-Encoding` / `connect-accept-encoding`. Other codings (br, zstd, …) → `unimplemented` |
+| Accept-Encoding advertisement | **Yes** | Unary `Accept-Encoding: gzip, identity`; streaming `connect-accept-encoding: gzip, identity` |
 | Server streaming `application/connect+*` | **Yes** | End-stream envelope on completion/error; unsupported stream encoding → end-stream `unimplemented` |
 | Client / bidi streaming over Connect | **No** | Clear `unimplemented`; native gRPC still serves them |
 | gRPC-Web unary | **Yes** | `+proto` (and `+json` codec path) |
@@ -35,6 +35,6 @@ in-repo so external users see the same floor.
 ## Deliberately later / human
 
 - Connect client & bidi streaming
-- Request-body gzip/br for Connect
+- Additional compressors (br, zstd)
 - Maven Central secrets + first tagged release (`docs/RELEASE.md`)
 - Server-side ffmpeg thumbnails
