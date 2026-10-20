@@ -97,6 +97,36 @@ class ConnectUnaryHttpHandler(
             return
         }
 
+        if (wire == WireProtocol.GRPC_WEB) {
+            if (request.method() != HttpMethod.POST) {
+                writeMethodNotAllowed(ctx, "POST")
+                return
+            }
+            if (serverStream != null) {
+                handleGrpcWebServerStream(ctx, procedure, serverStream, contentType)
+                return
+            }
+            if (clientStream != null) {
+                handleGrpcWebClientStream(ctx, procedure, clientStream, contentType)
+                return
+            }
+            if (bidiStream != null) {
+                handleGrpcWebBidiStream(ctx, procedure, bidiStream, contentType)
+                return
+            }
+            if (unary != null) {
+                handleGrpcWebPost(ctx, procedure, unary, contentType)
+                return
+            }
+            val unsupported = registry.unsupportedType(procedure)
+            if (unsupported != null) {
+                writeGrpcWebError(ctx, unimplementedStreaming(procedure, unsupported), contentType)
+                return
+            }
+            ctx.next()
+            return
+        }
+
         if (unary == null) {
             // Unary Content-Type against a streaming procedure → clear error.
             if (isStreamingProc) {
@@ -129,8 +159,7 @@ class ConnectUnaryHttpHandler(
 
         when (wire) {
             WireProtocol.CONNECT -> handleConnectPost(ctx, procedure, unary, contentType)
-            WireProtocol.CONNECT_STREAM -> Unit // handled above
-            WireProtocol.GRPC_WEB -> handleGrpcWebPost(ctx, procedure, unary, contentType)
+            WireProtocol.CONNECT_STREAM, WireProtocol.GRPC_WEB -> Unit // handled above
             WireProtocol.GRPC_NATIVE -> ctx.next()
         }
     }
@@ -511,6 +540,335 @@ class ConnectUnaryHttpHandler(
         }
     }
 
+    private fun handleGrpcWebServerStream(
+        ctx: RoutingContext,
+        procedure: String,
+        method: ConnectServerStreamMethod<out Message, out Message>,
+        contentType: String?,
+    ) {
+        val codec = grpcWebCodec(contentType)
+        val requestEncoding = try {
+            ConnectCompression.requireSupported(
+                ctx.request().getHeader("grpc-encoding"),
+                "grpc-encoding",
+            )
+        } catch (e: ConnectException) {
+            writeGrpcWebError(ctx, e, contentType)
+            return
+        }
+        val responseEncoding = ConnectCompression.negotiateResponseEncoding(
+            ctx.request().getHeader("grpc-accept-encoding"),
+            requestEncoding,
+        )
+        val timeoutMs = parseTimeout(ctx.request().getHeader("grpc-timeout"))
+            ?: parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val headers = collectHeaders(ctx)
+        val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
+        val requestBytes = try {
+            GrpcWebFraming.decodeExactlyOneDataMessage(body, requestEncoding)
+        } catch (e: ConnectException) {
+            writeGrpcWebError(ctx, e, contentType)
+            return
+        }
+
+        val callControl = StreamCallControl()
+        val clientGone = AtomicBoolean(false)
+        val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs, callControl)
+        val response = ctx.response()
+            .setStatusCode(200)
+            .putHeader(HttpHeaders.CONTENT_TYPE, normalizeGrpcWebContentType(contentType))
+            .putHeader("grpc-accept-encoding", GrpcWebFraming.ACCEPT_ENCODING_ADVERTISEMENT)
+        if (responseEncoding != ConnectCompression.IDENTITY) {
+            response.putHeader("grpc-encoding", responseEncoding)
+        }
+        response.setChunked(true)
+
+        val finished = AtomicBoolean(false)
+        val headersFlushed = AtomicBoolean(false)
+        fun markClientGone() {
+            clientGone.set(true)
+            callControl.cancelFromClient()
+        }
+        response.closeHandler { markClientGone() }
+        response.exceptionHandler { markClientGone() }
+
+        var timeoutTimerId = -1L
+
+        fun flushLeadingHeaders() {
+            if (!headersFlushed.compareAndSet(false, true)) return
+            if (response.headWritten()) return
+            writeStreamResponseHeaders(response, callContext)
+        }
+
+        fun writeFrame(bytes: ByteArray) {
+            ctx.vertx().runOnContext {
+                if (!response.ended() && !clientGone.get()) {
+                    flushLeadingHeaders()
+                    response.write(io.vertx.core.buffer.Buffer.buffer(bytes))
+                }
+            }
+        }
+
+        fun endWith(error: ConnectException?) {
+            if (!finished.compareAndSet(false, true)) return
+            if (timeoutTimerId >= 0) {
+                ctx.vertx().cancelTimer(timeoutTimerId)
+            }
+            if (clientGone.get()) return
+            val status = if (error == null) 0 else GrpcStatusMapping.toGrpcStatus(error.code).value()
+            val trailer = GrpcWebFraming.encodeTrailerFrame(
+                status,
+                error?.message,
+                callContext.snapshotTrailers(),
+            )
+            ctx.vertx().runOnContext {
+                if (!response.ended()) {
+                    flushLeadingHeaders()
+                    response.end(io.vertx.core.buffer.Buffer.buffer(trailer))
+                }
+            }
+        }
+
+        if (timeoutMs != null) {
+            timeoutTimerId = ctx.vertx().setTimer(timeoutMs) {
+                callControl.cancelFromClient()
+                endWith(
+                    ConnectException(
+                        ConnectCode.DEADLINE_EXCEEDED,
+                        "RPC timed out after ${timeoutMs}ms",
+                    ),
+                )
+            }
+        }
+
+        ctx.vertx().executeBlocking(
+            java.util.concurrent.Callable {
+                @Suppress("UNCHECKED_CAST")
+                val typed = method as ConnectServerStreamMethod<Message, Message>
+                val requestMessage = ProtobufCodecSupport.parse(requestBytes, typed.requestType(), codec)
+                val observer = object : ConnectStreamObserver<Message> {
+                    override fun onNext(value: Message) {
+                        val payload = ProtobufCodecSupport.encode(value, codec)
+                        writeFrame(GrpcWebFraming.encodeDataMaybeCompressed(payload, responseEncoding))
+                    }
+
+                    override fun onError(error: ConnectException) {
+                        endWith(error)
+                    }
+
+                    override fun onCompleted() {
+                        endWith(null)
+                    }
+                }
+                typed.handle(requestMessage, callContext, observer)
+                null
+            },
+            false,
+        ).onComplete { ar ->
+            if (ar.failed() && !clientGone.get()) {
+                endWith(GrpcStatusMapping.toConnectException(ar.cause()))
+            }
+        }
+    }
+
+    private fun handleGrpcWebClientStream(
+        ctx: RoutingContext,
+        procedure: String,
+        method: ConnectClientStreamMethod<out Message, out Message>,
+        contentType: String?,
+    ) {
+        val codec = grpcWebCodec(contentType)
+        val requestEncoding = try {
+            ConnectCompression.requireSupported(
+                ctx.request().getHeader("grpc-encoding"),
+                "grpc-encoding",
+            )
+        } catch (e: ConnectException) {
+            writeGrpcWebError(ctx, e, contentType)
+            return
+        }
+        val responseEncoding = ConnectCompression.negotiateResponseEncoding(
+            ctx.request().getHeader("grpc-accept-encoding"),
+            requestEncoding,
+        )
+        val timeoutMs = parseTimeout(ctx.request().getHeader("grpc-timeout"))
+            ?: parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val headers = collectHeaders(ctx)
+        val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
+        val requestPayloads = try {
+            GrpcWebFraming.decodeAllDataMessages(body, requestEncoding)
+        } catch (e: ConnectException) {
+            writeGrpcWebError(ctx, e, contentType)
+            return
+        }
+
+        val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs)
+
+        ctx.vertx().executeBlocking(
+            java.util.concurrent.Callable {
+                @Suppress("UNCHECKED_CAST")
+                val typed = method as ConnectClientStreamMethod<Message, Message>
+                val requests = requestPayloads.map { ProtobufCodecSupport.parse(it, typed.requestType(), codec) }
+                val responseMessage = typed.handle(requests, callContext)
+                ProtobufCodecSupport.encode(responseMessage, codec)
+            },
+            false,
+        ).onComplete { ar ->
+            val response = ctx.response()
+                .setStatusCode(200)
+                .putHeader(HttpHeaders.CONTENT_TYPE, normalizeGrpcWebContentType(contentType))
+                .putHeader("grpc-accept-encoding", GrpcWebFraming.ACCEPT_ENCODING_ADVERTISEMENT)
+            if (responseEncoding != ConnectCompression.IDENTITY) {
+                response.putHeader("grpc-encoding", responseEncoding)
+            }
+            writeStreamResponseHeaders(response, callContext)
+            if (ar.succeeded()) {
+                val data = GrpcWebFraming.encodeDataMaybeCompressed(ar.result(), responseEncoding)
+                val trailer = GrpcWebFraming.encodeTrailerFrame(0, null, callContext.snapshotTrailers())
+                response.end(io.vertx.core.buffer.Buffer.buffer(data + trailer))
+            } else {
+                val error = GrpcStatusMapping.toConnectException(ar.cause())
+                val status = GrpcStatusMapping.toGrpcStatus(error.code).value()
+                response.end(
+                    io.vertx.core.buffer.Buffer.buffer(
+                        GrpcWebFraming.encodeTrailerFrame(status, error.message, callContext.snapshotTrailers()),
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun handleGrpcWebBidiStream(
+        ctx: RoutingContext,
+        procedure: String,
+        method: ConnectBidiStreamMethod<out Message, out Message>,
+        contentType: String?,
+    ) {
+        val codec = grpcWebCodec(contentType)
+        val requestEncoding = try {
+            ConnectCompression.requireSupported(
+                ctx.request().getHeader("grpc-encoding"),
+                "grpc-encoding",
+            )
+        } catch (e: ConnectException) {
+            writeGrpcWebError(ctx, e, contentType)
+            return
+        }
+        val responseEncoding = ConnectCompression.negotiateResponseEncoding(
+            ctx.request().getHeader("grpc-accept-encoding"),
+            requestEncoding,
+        )
+        val timeoutMs = parseTimeout(ctx.request().getHeader("grpc-timeout"))
+            ?: parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val headers = collectHeaders(ctx)
+        val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
+        val requestPayloads = try {
+            GrpcWebFraming.decodeAllDataMessages(body, requestEncoding)
+        } catch (e: ConnectException) {
+            writeGrpcWebError(ctx, e, contentType)
+            return
+        }
+
+        val callControl = StreamCallControl()
+        val clientGone = AtomicBoolean(false)
+        val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs, callControl)
+        val response = ctx.response()
+            .setStatusCode(200)
+            .putHeader(HttpHeaders.CONTENT_TYPE, normalizeGrpcWebContentType(contentType))
+            .putHeader("grpc-accept-encoding", GrpcWebFraming.ACCEPT_ENCODING_ADVERTISEMENT)
+        if (responseEncoding != ConnectCompression.IDENTITY) {
+            response.putHeader("grpc-encoding", responseEncoding)
+        }
+        response.setChunked(true)
+
+        val finished = AtomicBoolean(false)
+        val headersFlushed = AtomicBoolean(false)
+        fun markClientGone() {
+            clientGone.set(true)
+            callControl.cancelFromClient()
+        }
+        response.closeHandler { markClientGone() }
+        response.exceptionHandler { markClientGone() }
+
+        var timeoutTimerId = -1L
+
+        fun flushLeadingHeaders() {
+            if (!headersFlushed.compareAndSet(false, true)) return
+            if (response.headWritten()) return
+            writeStreamResponseHeaders(response, callContext)
+        }
+
+        fun writeFrame(bytes: ByteArray) {
+            ctx.vertx().runOnContext {
+                if (!response.ended() && !clientGone.get()) {
+                    flushLeadingHeaders()
+                    response.write(io.vertx.core.buffer.Buffer.buffer(bytes))
+                }
+            }
+        }
+
+        fun endWith(error: ConnectException?) {
+            if (!finished.compareAndSet(false, true)) return
+            if (timeoutTimerId >= 0) {
+                ctx.vertx().cancelTimer(timeoutTimerId)
+            }
+            if (clientGone.get()) return
+            val status = if (error == null) 0 else GrpcStatusMapping.toGrpcStatus(error.code).value()
+            val trailer = GrpcWebFraming.encodeTrailerFrame(
+                status,
+                error?.message,
+                callContext.snapshotTrailers(),
+            )
+            ctx.vertx().runOnContext {
+                if (!response.ended()) {
+                    flushLeadingHeaders()
+                    response.end(io.vertx.core.buffer.Buffer.buffer(trailer))
+                }
+            }
+        }
+
+        if (timeoutMs != null) {
+            timeoutTimerId = ctx.vertx().setTimer(timeoutMs) {
+                callControl.cancelFromClient()
+                endWith(
+                    ConnectException(
+                        ConnectCode.DEADLINE_EXCEEDED,
+                        "RPC timed out after ${timeoutMs}ms",
+                    ),
+                )
+            }
+        }
+
+        ctx.vertx().executeBlocking(
+            java.util.concurrent.Callable {
+                @Suppress("UNCHECKED_CAST")
+                val typed = method as ConnectBidiStreamMethod<Message, Message>
+                val requests = requestPayloads.map { ProtobufCodecSupport.parse(it, typed.requestType(), codec) }
+                val observer = object : ConnectStreamObserver<Message> {
+                    override fun onNext(value: Message) {
+                        val payload = ProtobufCodecSupport.encode(value, codec)
+                        writeFrame(GrpcWebFraming.encodeDataMaybeCompressed(payload, responseEncoding))
+                    }
+
+                    override fun onError(error: ConnectException) {
+                        endWith(error)
+                    }
+
+                    override fun onCompleted() {
+                        endWith(null)
+                    }
+                }
+                typed.handle(requests, callContext, observer)
+                null
+            },
+            false,
+        ).onComplete { ar ->
+            if (ar.failed() && !clientGone.get()) {
+                endWith(GrpcStatusMapping.toConnectException(ar.cause()))
+            }
+        }
+    }
+
     private fun writeConnectStreamError(
         ctx: RoutingContext,
         error: ConnectException,
@@ -697,13 +1055,40 @@ class ConnectUnaryHttpHandler(
         val codec = grpcWebCodec(contentType)
         val timeoutMs = parseTimeout(ctx.request().getHeader("grpc-timeout"))
             ?: parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
-        val body = try {
-            GrpcWebFraming.decodeRequestMessage(ctx.body().buffer()?.bytes ?: ByteArray(0))
+        val requestEncoding = try {
+            ConnectCompression.requireSupported(
+                ctx.request().getHeader("grpc-encoding"),
+                "grpc-encoding",
+            )
         } catch (e: ConnectException) {
             writeGrpcWebError(ctx, e, contentType)
             return
         }
-        invokeAsync(ctx, procedure, method, codec, collectHeaders(ctx), timeoutMs, body, WireProtocol.GRPC_WEB, contentType)
+        val responseEncoding = ConnectCompression.negotiateResponseEncoding(
+            ctx.request().getHeader("grpc-accept-encoding"),
+            requestEncoding,
+        )
+        val body = try {
+            GrpcWebFraming.decodeRequestMessage(
+                ctx.body().buffer()?.bytes ?: ByteArray(0),
+                requestEncoding,
+            )
+        } catch (e: ConnectException) {
+            writeGrpcWebError(ctx, e, contentType)
+            return
+        }
+        invokeAsync(
+            ctx,
+            procedure,
+            method,
+            codec,
+            collectHeaders(ctx),
+            timeoutMs,
+            body,
+            WireProtocol.GRPC_WEB,
+            contentType,
+            responseEncoding = responseEncoding,
+        )
     }
 
     private fun invokeAsync(
@@ -741,7 +1126,13 @@ class ConnectUnaryHttpHandler(
                         varyAcceptEncoding,
                         responseEncoding,
                     )
-                    WireProtocol.GRPC_WEB -> writeGrpcWebSuccess(ctx, callContext, ar.result(), grpcWebContentType)
+                    WireProtocol.GRPC_WEB -> writeGrpcWebSuccess(
+                        ctx,
+                        callContext,
+                        ar.result(),
+                        grpcWebContentType,
+                        responseEncoding,
+                    )
                     WireProtocol.CONNECT_STREAM, WireProtocol.GRPC_NATIVE -> Unit
                 }
             } else {
@@ -816,12 +1207,19 @@ class ConnectUnaryHttpHandler(
         callContext: DefaultConnectCallContext,
         protoBytes: ByteArray,
         contentType: String?,
+        responseEncoding: String = ConnectCompression.IDENTITY,
     ) {
-        val trailers = callContext.snapshotTrailers().mapValues { it.value.firstOrNull() ?: "" }
-            .filterValues { it.isNotEmpty() }
-        val body = GrpcWebFraming.encodeUnarySuccess(protoBytes, trailers)
+        val body = GrpcWebFraming.encodeUnarySuccess(
+            protoBytes,
+            callContext.snapshotTrailers(),
+            responseEncoding,
+        )
         val response = ctx.response().setStatusCode(200)
         response.putHeader(HttpHeaders.CONTENT_TYPE, normalizeGrpcWebContentType(contentType))
+        response.putHeader("grpc-accept-encoding", GrpcWebFraming.ACCEPT_ENCODING_ADVERTISEMENT)
+        if (responseEncoding != ConnectCompression.IDENTITY) {
+            response.putHeader("grpc-encoding", responseEncoding)
+        }
         val hdrs = response.headers()
         for ((name, values) in callContext.snapshotHeaders()) {
             for (value in values) {
@@ -842,9 +1240,11 @@ class ConnectUnaryHttpHandler(
             return
         }
         val statusCode = GrpcStatusMapping.toGrpcStatus(error.code).value()
-        val body = GrpcWebFraming.encodeUnaryError(statusCode, error.message)
+        val trailers = callContext?.snapshotTrailers() ?: emptyMap()
+        val body = GrpcWebFraming.encodeUnaryError(statusCode, error.message, trailers)
         val response = ctx.response().setStatusCode(200)
         response.putHeader(HttpHeaders.CONTENT_TYPE, normalizeGrpcWebContentType(contentType))
+        response.putHeader("grpc-accept-encoding", GrpcWebFraming.ACCEPT_ENCODING_ADVERTISEMENT)
         if (callContext != null) {
             val hdrs = response.headers()
             for ((name, values) in callContext.snapshotHeaders()) {

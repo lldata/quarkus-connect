@@ -39,14 +39,8 @@ internal object ConformanceSupport {
             ConformancePayload.RequestInfo.newBuilder()
                 .addAllRequestHeaders(headers)
                 .addAllRequests(requests.map { Any.pack(it) })
-        // Prefer the client-provided Connect timeout header (forwarded by the bridge).
-        headers
-            .firstOrNull { it.name.equals("connect-timeout-ms", ignoreCase = true) }
-            ?.valueList
-            ?.firstOrNull()
-            ?.toLongOrNull()
-            ?.takeIf { it > 0 }
-            ?.let { builder.timeoutMs = it }
+        // Prefer Connect timeout header; fall back to gRPC-Web `grpc-timeout` (e.g. "2000m").
+        timeoutMsFromHeaders(headers)?.let { builder.timeoutMs = it }
         if (connectGetInfo != null) {
             builder.connectGetInfo = connectGetInfo
         }
@@ -84,6 +78,44 @@ internal object ConformanceSupport {
             }
         }
         return metadata
+    }
+
+    /** Connect `connect-timeout-ms` or gRPC(-Web) `grpc-timeout` → milliseconds. */
+    fun timeoutMsFromHeaders(headers: List<Header>): Long? {
+        headers
+            .firstOrNull { it.name.equals("connect-timeout-ms", ignoreCase = true) }
+            ?.valueList
+            ?.firstOrNull()
+            ?.toLongOrNull()
+            ?.takeIf { it > 0 }
+            ?.let { return it }
+
+        val grpcTimeout =
+            headers
+                .firstOrNull { it.name.equals("grpc-timeout", ignoreCase = true) }
+                ?.valueList
+                ?.firstOrNull()
+                ?: return null
+        return parseGrpcTimeoutMs(grpcTimeout)
+    }
+
+    /** gRPC timeout units: n/u/m/S/M/H (nanos … hours). */
+    fun parseGrpcTimeoutMs(raw: String): Long? {
+        if (raw.isBlank()) return null
+        val asMillis = raw.toLongOrNull()
+        if (asMillis != null) return asMillis.takeIf { it > 0 }
+        val unit = raw.lastOrNull() ?: return null
+        val amount = raw.dropLast(1).toLongOrNull() ?: return null
+        val millis = when (unit) {
+            'n' -> amount / 1_000_000
+            'u' -> amount / 1_000
+            'm' -> amount
+            'S' -> amount * 1_000
+            'M' -> amount * 60_000
+            'H' -> amount * 3_600_000
+            else -> return null
+        }
+        return millis.takeIf { it > 0 }
     }
 
     fun sleepMs(ms: Int) {

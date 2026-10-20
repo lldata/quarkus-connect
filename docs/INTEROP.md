@@ -27,15 +27,15 @@ with a ServerCompat stdin/stdout adapter (`ConformanceMain`). The runner binary 
 
 In scope:
 
-- HTTP/1.1, Connect only (no gRPC / gRPC-Web / TLS / H2C)
-- Codecs: proto + JSON; compression: identity + gzip
-- Stream types: unary, client, server, half-duplex bidi
+- HTTP/1.1, **Connect + gRPC-Web**
+- Codecs: proto + JSON; compression: identity + gzip (including gRPC-Web compressed frames)
+- Stream types: unary, client, server, half-duplex bidi (Connect and gRPC-Web)
 - Connect GET; trailers; half-duplex bidi over HTTP/1.1
 
 Out of config (skipped entirely by the runner):
 
 - TLS / client certs / HTTP/2 / HTTP/3 / H2C
-- gRPC and gRPC-Web protocols
+- Native gRPC (`PROTOCOL_GRPC`)
 - Full-duplex bidi
 - Message receive limits
 - Brotli / zstd / deflate / snappy
@@ -43,7 +43,7 @@ Out of config (skipped entirely by the runner):
 ### Known-failing (`conformance/config/known-failing.txt`)
 
 Exact case names that still fail and **must** keep failing for CI to stay green.
-As of unexpected-request status alignment: **364 pass / 0 known-failing** on the thin matrix.
+As of gRPC-Web matrix enablement: **654 pass / 0 known-failing**.
 
 Remove entries from `known-failing.txt` when a case starts passing — the runner requires known-failing cases to fail.
 

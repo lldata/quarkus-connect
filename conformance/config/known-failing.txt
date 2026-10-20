@@ -1,3 +1,3 @@
-# Exact known-failing cases from connectconformance --mode server (thin features.yaml).
+# Exact known-failing cases from connectconformance --mode server.
 # Cases listed here are required to fail; remove an entry when it starts passing.
-# Thin matrix is currently fully green (364/364) — keep this file for future flakes.
+# Connect + gRPC-Web HTTP/1 thin matrix is currently fully green (654/654).
