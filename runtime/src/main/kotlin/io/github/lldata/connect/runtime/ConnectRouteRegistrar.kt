@@ -32,12 +32,15 @@ class ConnectRouteRegistrar {
     fun register(@Observes router: Router) {
         val handler = ConnectUnaryHttpHandler(registry)
 
-        // Before quarkus-grpc (order 0): own gRPC-Web without buffering non-matching requests.
-        router.routeWithRegex("^/.+/.+$")
-            .order(GRPC_WEB_PREEMPT_ORDER)
-            .handler(GrpcWebPreemptHandler(handler))
+        // Before quarkus-grpc (order 0): own gRPC-Web. Route matching uses consumes so
+        // native application/grpc never enters this route (BodyHandler must not run for it).
+        val grpcWeb = router.routeWithRegex("^/.+/.+$").order(GRPC_WEB_PREEMPT_ORDER)
+        for (ct in GRPC_WEB_CONTENT_TYPES) {
+            grpcWeb.consumes(ct)
+        }
+        grpcWeb.handler(BodyHandler.create()).handler(handler)
 
-        // After quarkus-grpc declines (HTTP/1 or non-grpc Content-Type): Connect + gRPC-Web.
+        // After quarkus-grpc declines (HTTP/1 or non-grpc Content-Type): Connect (+ gRPC-Web backup).
         router.routeWithRegex("^/.+/.+$")
             .order(CONNECT_FALLBACK_ORDER)
             .handler(BodyHandler.create())
@@ -57,35 +60,15 @@ class ConnectRouteRegistrar {
 
         /** After quarkus-grpc so native `application/grpc` on h2 is not body-buffered here. */
         const val CONNECT_FALLBACK_ORDER = 10_000
-    }
-}
 
-/**
- * Single-handler early route: `next()` skips to the next route (no BodyHandler on this route).
- * For `application/grpc-web*`, buffer the body and dispatch to [connectHandler] so quarkus-grpc
- * never sees the request on HTTP/2.
- */
-internal class GrpcWebPreemptHandler(
-    private val connectHandler: Handler<RoutingContext>,
-) : Handler<RoutingContext> {
-
-    override fun handle(ctx: RoutingContext) {
-        val media = mediaType(ctx.request().getHeader(HttpHeaders.CONTENT_TYPE))
-        if (!media.startsWith("application/grpc-web")) {
-            ctx.next()
-            return
-        }
-        ctx.request()
-            .body()
-            .onSuccess { buffer ->
-                ctx.setBody(buffer ?: Buffer.buffer())
-                connectHandler.handle(ctx)
-            }
-            .onFailure { err -> ctx.fail(err) }
-    }
-
-    private fun mediaType(contentType: String?): String {
-        if (contentType.isNullOrBlank()) return ""
-        return contentType.substringBefore(';').trim().lowercase()
+        /** MIME types Vert.x `consumes` must list explicitly (no prefix match for `+` suffixes). */
+        val GRPC_WEB_CONTENT_TYPES = listOf(
+            "application/grpc-web",
+            "application/grpc-web+proto",
+            "application/grpc-web+json",
+            "application/grpc-web-text",
+            "application/grpc-web-text+proto",
+            "application/grpc-web-text+json",
+        )
     }
 }
