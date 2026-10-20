@@ -117,4 +117,12 @@ Apache License 2.0 only (`LICENSE`, README badge, Gradle coordinates).
   `.github/workflows/publish.yml` fails closed after the secret + version gates.
 - Agent issue/review/tend/Claude workflows from the private reference are not copied yet
   (need public-repo credentials and scripts).
-- Quarkus platform version (`3.17.5`) is interim; re-bump deliberately, not casually.
+- Quarkus platform version is pinned deliberately; re-bump with care.
+
+
+## Scope reminders
+
+- v1 = Connect + gRPC-Web **server** unary over ordinary `@GrpcService` beans on one HTTP port; streaming and Quarkus Connect client are later
+- Prefer `@GrpcService` in examples — no hand-written per-RPC Connect handlers
+- Keep the protocol SPI Java-friendly; Kotlin is the primary implementation language
+- Do not use product/codename branding in branch, module, package, or doc titles

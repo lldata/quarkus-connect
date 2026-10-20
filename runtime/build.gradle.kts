@@ -37,9 +37,15 @@ dependencies {
     implementation("io.quarkus:quarkus-arc")
     implementation("io.quarkus:quarkus-vertx-http")
     implementation("io.quarkus:quarkus-kotlin")
+    // Bridge ordinary @GrpcService beans (shared HTTP port via use-separate-server=false)
+    implementation("io.quarkus:quarkus-grpc")
+    implementation("io.quarkus:quarkus-grpc-api")
     implementation("org.jetbrains.kotlin:kotlin-stdlib")
     implementation("com.google.protobuf:protobuf-java:$protobufVersion")
     implementation("com.google.protobuf:protobuf-java-util:$protobufVersion")
+    implementation("io.grpc:grpc-api")
+    implementation("io.grpc:grpc-protobuf")
+    implementation("io.grpc:grpc-stub")
 
     annotationProcessor("io.quarkus:quarkus-extension-processor:$quarkusVersion")
 }

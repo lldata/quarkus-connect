@@ -20,3 +20,15 @@ out/
 
 # Local
 dependency-reduced-pom.xml
+
+# Flutter example
+examples/flutter-web-client/.dart_tool/
+examples/flutter-web-client/.flutter-plugins
+examples/flutter-web-client/.flutter-plugins-dependencies
+examples/flutter-web-client/.packages
+examples/flutter-web-client/build/
+examples/flutter-web-client/.pub-cache/
+examples/flutter-web-client/.pub/
+examples/flutter-web-client/ios/Pods/
+examples/flutter-web-client/android/.gradle/
+examples/flutter-web-client/android/local.properties

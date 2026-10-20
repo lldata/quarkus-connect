@@ -3,24 +3,23 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![CI](https://github.com/lldata/quarkus-connect/actions/workflows/ci.yml/badge.svg)](https://github.com/lldata/quarkus-connect/actions/workflows/ci.yml)
 
-Quarkus extension that implements the [Connect RPC](https://connectrpc.com/) **server** protocol over Vert.x HTTP.
+Quarkus extension that serves ordinary `@GrpcService` beans as **gRPC + Connect + gRPC-Web** on the **Quarkus HTTP port**. Existing gRPC `ServerInterceptor`s apply to Connect and gRPC-Web.
 
-Kotlin-first runtime with a Java-friendly SPI so a Java programming model can be added later without rewriting the protocol layer.
+Kotlin-first runtime with a Java-friendly SPI.
 
 **License:** [Apache License 2.0](LICENSE) (SPDX: `Apache-2.0`).  
-**Build:** Gradle (house choice for this extension).
+**Build:** Gradle.
 
 ## Status (v1)
 
 | Capability | Support |
 | --- | --- |
-| Unary Connect (POST) | Yes — `application/proto`, `application/json` |
-| Unary Connect (GET) | Yes — query `encoding`, `message`, `connect=1` |
+| `@GrpcService` → Connect unary (JSON + proto) | Yes |
+| `@GrpcService` → gRPC-Web unary | Yes |
+| Native gRPC on same HTTP port | Yes (`quarkus.grpc.server.use-separate-server=false`) |
+| Global / method `ServerInterceptor`s on Connect | Yes |
 | Streaming (`application/connect+*`) | Not yet |
-| gRPC / gRPC-Web wire protocols | Not yet (Connect clients only) |
 | Quarkus-side Connect client | Out of scope for v1 |
-
-Target clients include any Connect-compliant stack (e.g. connect-es, connect-go, Flutter web via Connect).
 
 ## Coordinates
 
@@ -28,77 +27,47 @@ Target clients include any Connect-compliant stack (e.g. connect-es, connect-go,
 implementation("io.github.lldata:quarkus-connect:999-SNAPSHOT")
 ```
 
-```xml
-<dependency>
-  <groupId>io.github.lldata</groupId>
-  <artifactId>quarkus-connect</artifactId>
-  <version>999-SNAPSHOT</version>
-</dependency>
-```
-
-Group `io.github.lldata` (greenfield).
-
 ## Quick start
 
-Implement `ConnectUnaryMethod` (protobuf request/response) and register it as a CDI bean:
+1. Depend on `quarkus-connect` + `quarkus-grpc`.
+2. Implement a normal `@GrpcService` (Mutiny or blocking ImplBase).
+3. Set `quarkus.grpc.server.use-separate-server=false`.
 
 ```kotlin
-@ApplicationScoped
-class GreetConnectService : ConnectUnaryMethod<GreetRequest, GreetResponse> {
-    override fun procedure() = "greet.v1.GreetService/Greet"
-    override fun requestType() = GreetRequest::class.java
-    override fun responseType() = GreetResponse::class.java
-
-    override fun handle(request: GreetRequest, context: ConnectCallContext): GreetResponse =
-        GreetResponse.newBuilder().setGreeting("Hello, ${request.name}!").build()
+@GrpcService
+class DemoGrpcService : MutinyDemoServiceGrpc.DemoServiceImplBase() {
+    override fun echo(request: EchoRequest): Uni<EchoResponse> =
+        Uni.createFrom().item(
+            EchoResponse.newBuilder().setMessage(request.message).build(),
+        )
 }
 ```
 
-Call it with a Connect client or curl:
-
 ```bash
-curl -sS -X POST http://localhost:8080/greet.v1.GreetService/Greet \
+curl -sS -X POST http://localhost:8080/demo.v1.DemoService/Echo \
   -H 'Content-Type: application/json' \
   -H 'connect-protocol-version: 1' \
-  -d '{"name":"Buf"}'
-# {"greeting":"Hello, Buf!"}
+  -H 'Authorization: Bearer demo-user' \
+  -d '{"message":"hello","clientSeq":"7"}'
 ```
+
+See **`examples/quarkus-kotlin-server`** and **`examples/flutter-web-client`**.
 
 ## Content types
 
-| RPC shape | Content-Type | Body |
-| --- | --- | --- |
-| Unary success | `application/proto` or `application/json` | Bare protobuf / JSON message (no gRPC framing) |
-| Unary error | always `application/json` | `{"code":"…","message":"…"}` |
-| Streaming (future) | `application/connect+proto` / `+json` | Envelope-framed |
-
-Optional request header: `connect-protocol-version: 1`. Optional timeout: `connect-timeout-ms`. Trailing metadata is returned as ordinary headers prefixed with `trailer-`.
-
-## Error mapping (unary)
-
-Connect codes map to HTTP statuses ([protocol reference](https://connectrpc.com/docs/protocol/#error-codes)):
-
-| Connect code | HTTP |
+| Protocol | Content-Type |
 | --- | --- |
-| `invalid_argument` / `failed_precondition` / `out_of_range` | 400 |
-| `unauthenticated` | 401 |
-| `permission_denied` | 403 |
-| `not_found` | 404 |
-| `aborted` / `already_exists` | 409 |
-| `resource_exhausted` | 429 |
-| `canceled` | 499 |
-| `unimplemented` | 501 |
-| `unavailable` | 503 |
-| `deadline_exceeded` | 504 |
-| `unknown` / `internal` / `data_loss` | 500 |
-
-Unsupported `Content-Type` → HTTP **415** with a Connect JSON error body.
+| Connect unary success | `application/proto` or `application/json` |
+| Connect unary error | always `application/json` |
+| gRPC-Web | `application/grpc-web+proto` (framed) |
+| Native gRPC | `application/grpc` (handled by quarkus-grpc) |
 
 ## Modules
 
-- `:quarkus-connect` (dir `runtime/`) — protocol + Vert.x route + SPI
-- `:quarkus-connect-deployment` (dir `deployment/`) — Quarkus build steps
-- `:integration-tests` — sample `greet.v1.GreetService` + RestAssured checks
+- `:quarkus-connect` (`runtime/`) — protocol + Vert.x routes + `@GrpcService` bridge
+- `:quarkus-connect-deployment` (`deployment/`) — Quarkus build steps
+- `:integration-tests` — `@GrpcService` + interceptor + Connect/gRPC-Web RestAssured
+- `examples/` — Kotlin server + Flutter web client
 
 ## Build
 
