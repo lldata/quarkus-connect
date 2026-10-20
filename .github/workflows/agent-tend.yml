@@ -113,7 +113,9 @@ jobs:
 
   tend:
     needs: [ survey ]
-    if: needs.survey.outputs.work == 'true'
+    # Skip the model step until CLAUDE_CODE_OAUTH_TOKEN + Claude Code GitHub App exist.
+    # Survey still runs so logs show what would have been tended.
+    if: needs.survey.outputs.work == 'true' && secrets.CLAUDE_CODE_OAUTH_TOKEN != ''
 
     runs-on: ubuntu-latest
     timeout-minutes: 60

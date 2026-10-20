@@ -16,6 +16,9 @@ permissions: {}
 jobs:
 
   assess:
+    # Skip until CLAUDE_CODE_OAUTH_TOKEN + Claude Code GitHub App are installed.
+    if: secrets.CLAUDE_CODE_OAUTH_TOKEN != ''
+
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

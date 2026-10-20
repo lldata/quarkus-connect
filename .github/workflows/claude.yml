@@ -15,7 +15,8 @@ permissions: {}
 jobs:
 
   claude:
-    if: contains(github.event.comment.body, '@claude')
+    # Skip until CLAUDE_CODE_OAUTH_TOKEN + Claude Code GitHub App are installed.
+    if: contains(github.event.comment.body, '@claude') && secrets.CLAUDE_CODE_OAUTH_TOKEN != ''
 
     runs-on: ubuntu-latest
     timeout-minutes: 45

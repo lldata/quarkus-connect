@@ -22,9 +22,9 @@ jobs:
   review:
     # Dependabot's runs are given the Dependabot secret store rather than the Actions one, so
     # `secrets.CLAUDE_CODE_OAUTH_TOKEN` below arrives empty and the review cannot authenticate.
-    # Reviewing a version bump in a `uses:` line was never worth much anyway, and CODEOWNERS
-    # sends anything touching the workflows to a human regardless.
-    if: github.actor != 'dependabot[bot]'
+    # Skip (do not fail CI) until the Claude Code app + token are wired on this public repo.
+    # CODEOWNERS still sends workflow/path changes to a human.
+    if: github.actor != 'dependabot[bot]' && secrets.CLAUDE_CODE_OAUTH_TOKEN != ''
 
     runs-on: ubuntu-latest
     timeout-minutes: 30
