@@ -48,7 +48,7 @@ steal `application/grpc-web*` and answer with native `application/grpc`.
 ### Known-failing (`conformance/config/known-failing.txt`)
 
 Exact case names that still fail and **must** keep failing for CI to stay green.
-As of gRPC-Web×HTTP/2 enablement: see CI / `:conformance:conformanceSuite` summary.
+As of gRPC-Web×HTTP/2 enablement (**v0.1.3**): **1308 pass / 0 known-failing**.
 
 Remove entries from `known-failing.txt` when a case starts passing — the runner requires known-failing cases to fail.
 
