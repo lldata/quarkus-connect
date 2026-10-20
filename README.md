@@ -23,6 +23,7 @@ Kotlin-first runtime with a Java-friendly SPI ([docs/SPI.md](docs/SPI.md)).
 | Chunked media upload example | Yes — `examples/quarkus-kotlin-server` |
 | Packed `google.rpc` error details | Yes |
 | Client deadlines (`connect-timeout-ms`) | Yes |
+| Compression (`gzip` + `identity`) | Yes — unary + server streaming |
 | Quarkus-side Connect client | Out of scope for v1 |
 
 ## Coordinates

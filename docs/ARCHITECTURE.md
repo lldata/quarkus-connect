@@ -37,8 +37,9 @@ Build: JDK **21** toolchain, library bytecode **JVM 17**. `./gradlew check`.
 | Success CT | same as request (`application/proto` or `application/json`) |
 | Error CT | always `application/json` + non-200 from `ConnectCode` |
 | Trailers | response headers prefixed `trailer-` |
-| GET | `?connect=v1&encoding=…&message=…` (`base64=1` for proto) |
+| GET | `?connect=v1&encoding=…&message=…` (`base64=1` for proto; `compression=gzip` needs base64) |
 | Version header | `connect-protocol-version: 1` (POST) |
+| Compression | `identity` + `gzip` (unary whole-body; streaming per-envelope) |
 
 ## Programming model
 

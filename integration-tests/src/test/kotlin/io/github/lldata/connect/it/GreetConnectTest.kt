@@ -9,7 +9,11 @@ import org.hamcrest.Matchers.startsWith
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 @QuarkusTest
 class GreetConnectTest {
@@ -39,6 +43,7 @@ class GreetConnectTest {
         val raw = given()
             .header("Content-Type", "application/proto")
             .header("connect-protocol-version", "1")
+            .header("Accept-Encoding", "identity")
             .header("Authorization", auth)
             .body(request.toByteArray())
             .`when`()
@@ -148,7 +153,7 @@ class GreetConnectTest {
             .then()
             .statusCode(200)
             .header("Vary", equalTo("Accept-Encoding"))
-            .header("Accept-Encoding", equalTo("identity"))
+            .header("Accept-Encoding", equalTo("gzip, identity"))
             .body("greeting", equalTo("Hello, Get!"))
     }
 
@@ -168,27 +173,72 @@ class GreetConnectTest {
     }
 
     @Test
-    fun `GET unsupported compression returns unimplemented`() {
+    fun `GET gzip compression with base64 message`() {
+        val json = """{"name":"GzipGet"}""".toByteArray()
+        val b64 = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(gzip(json))
+
+        given()
+            .header("Authorization", auth)
+            .header("Accept-Encoding", "identity")
+            .queryParam("connect", "v1")
+            .queryParam("encoding", "json")
+            .queryParam("compression", "gzip")
+            .queryParam("base64", "1")
+            .queryParam("message", b64)
+            .`when`()
+            .get("/greet.v1.GreetService/Greet")
+            .then()
+            .statusCode(200)
+            .body("greeting", equalTo("Hello, GzipGet!"))
+    }
+
+    @Test
+    fun `GET unsupported compression br returns unimplemented`() {
         given()
             .header("Authorization", auth)
             .queryParam("connect", "v1")
             .queryParam("encoding", "json")
-            .queryParam("compression", "gzip")
+            .queryParam("compression", "br")
             .queryParam("message", """{"name":"Get"}""")
             .`when`()
             .get("/greet.v1.GreetService/Greet")
             .then()
             .statusCode(501)
             .body("code", equalTo("unimplemented"))
-            .body("message", org.hamcrest.Matchers.containsString("identity"))
+            .body("message", org.hamcrest.Matchers.containsString("br"))
     }
 
     @Test
-    fun `unary Content-Encoding gzip returns unimplemented`() {
-        given()
+    fun `unary Content-Encoding gzip request and Accept-Encoding gzip response`() {
+        val compressed = gzip("""{"name":"GzipPost"}""".toByteArray())
+
+        val raw = given()
             .header("Content-Type", "application/json")
             .header("connect-protocol-version", "1")
             .header("Content-Encoding", "gzip")
+            .header("Accept-Encoding", "gzip")
+            .header("Authorization", auth)
+            .body(compressed)
+            .`when`()
+            .post("/greet.v1.GreetService/Greet")
+            .then()
+            .statusCode(200)
+            .header("Content-Encoding", equalTo("gzip"))
+            .header("Accept-Encoding", equalTo("gzip, identity"))
+            .extract()
+            .asByteArray()
+
+        // Prefer raw bytes — RestAssured may or may not auto-decode Content-Encoding.
+        val json = String(maybeGunzip(raw))
+        assertTrue(json.contains("Hello, GzipPost!"), json)
+    }
+
+    @Test
+    fun `unary Content-Encoding br returns unimplemented`() {
+        given()
+            .header("Content-Type", "application/json")
+            .header("connect-protocol-version", "1")
+            .header("Content-Encoding", "br")
             .header("Authorization", auth)
             .body("""{"name":"Buf"}""")
             .`when`()
@@ -206,6 +256,7 @@ class GreetConnectTest {
 
         val raw = given()
             .header("Authorization", auth)
+            .header("Accept-Encoding", "identity")
             .queryParam("connect", "v1")
             .queryParam("encoding", "proto")
             .queryParam("base64", "1")
@@ -381,20 +432,16 @@ class GreetConnectTest {
     }
 
     @Test
-    fun `streaming connect-content-encoding gzip returns unimplemented end-stream`() {
-        val json = """{"name":"Stream"}""".toByteArray()
-        val req = ByteArray(5 + json.size)
-        req[0] = 0x00
-        req[1] = ((json.size ushr 24) and 0xff).toByte()
-        req[2] = ((json.size ushr 16) and 0xff).toByte()
-        req[3] = ((json.size ushr 8) and 0xff).toByte()
-        req[4] = (json.size and 0xff).toByte()
-        System.arraycopy(json, 0, req, 5, json.size)
+    fun `streaming gzip request and response envelopes`() {
+        val json = """{"name":"GzipStream"}""".toByteArray()
+        val compressed = gzip(json)
+        val req = connectEnvelope(compressed, compressedFlag = true)
 
         val raw = given()
             .header("Content-Type", "application/connect+json")
             .header("connect-protocol-version", "1")
             .header("connect-content-encoding", "gzip")
+            .header("connect-accept-encoding", "gzip")
             .header("Authorization", auth)
             .body(req)
             .`when`()
@@ -402,7 +449,49 @@ class GreetConnectTest {
             .then()
             .statusCode(200)
             .header("Content-Type", equalTo("application/connect+json"))
-            .header("connect-accept-encoding", equalTo("identity"))
+            .header("connect-content-encoding", equalTo("gzip"))
+            .header("connect-accept-encoding", equalTo("gzip, identity"))
+            .extract()
+            .asByteArray()
+
+        val messages = mutableListOf<String>()
+        var offset = 0
+        var sawEnd = false
+        while (offset + 5 <= raw.size) {
+            val flag = raw[offset].toInt() and 0xff
+            val len = ByteBuffer.wrap(raw, offset + 1, 4).int
+            val payload = raw.copyOfRange(offset + 5, offset + 5 + len)
+            offset += 5 + len
+            if (flag and 0x02 != 0) {
+                sawEnd = true
+            } else {
+                val decoded = if (flag and 0x01 != 0) gunzip(payload) else payload
+                messages += String(decoded)
+            }
+        }
+        assertTrue(sawEnd)
+        assertEquals(3, messages.size)
+        assertTrue(messages[0].contains("Hello #1, GzipStream!"))
+        assertTrue(messages.any { it.contains("Hello #3, GzipStream!") })
+    }
+
+    @Test
+    fun `streaming connect-content-encoding br returns unimplemented end-stream`() {
+        val json = """{"name":"Stream"}""".toByteArray()
+        val req = connectEnvelope(json, compressedFlag = false)
+
+        val raw = given()
+            .header("Content-Type", "application/connect+json")
+            .header("connect-protocol-version", "1")
+            .header("connect-content-encoding", "br")
+            .header("Authorization", auth)
+            .body(req)
+            .`when`()
+            .post("/greet.v1.GreetService/StreamGreetings")
+            .then()
+            .statusCode(200)
+            .header("Content-Type", equalTo("application/connect+json"))
+            .header("connect-accept-encoding", equalTo("gzip, identity"))
             .extract()
             .asByteArray()
 
@@ -449,9 +538,11 @@ class GreetConnectTest {
         assertTrue(trailerText.contains("grpc-status: 16")) // UNAUTHENTICATED
     }
 
-    private fun grpcWebDataFrame(payload: ByteArray): ByteArray {
+    private fun grpcWebDataFrame(payload: ByteArray): ByteArray = connectEnvelope(payload, compressedFlag = false)
+
+    private fun connectEnvelope(payload: ByteArray, compressedFlag: Boolean): ByteArray {
         val out = ByteArray(5 + payload.size)
-        out[0] = 0x00
+        out[0] = if (compressedFlag) 0x01 else 0x00
         out[1] = ((payload.size ushr 24) and 0xff).toByte()
         out[2] = ((payload.size ushr 16) and 0xff).toByte()
         out[3] = ((payload.size ushr 8) and 0xff).toByte()
@@ -459,4 +550,21 @@ class GreetConnectTest {
         System.arraycopy(payload, 0, out, 5, payload.size)
         return out
     }
+
+    private fun gzip(data: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        GZIPOutputStream(out).use { it.write(data) }
+        return out.toByteArray()
+    }
+
+    private fun gunzip(data: ByteArray): ByteArray =
+        GZIPInputStream(ByteArrayInputStream(data)).use { it.readBytes() }
+
+    /** RestAssured may auto-decode Content-Encoding; accept either form. */
+    private fun maybeGunzip(data: ByteArray): ByteArray =
+        try {
+            gunzip(data)
+        } catch (_: Exception) {
+            data
+        }
 }
