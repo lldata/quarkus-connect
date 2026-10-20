@@ -8,6 +8,9 @@ version is tagged.
 
 ## [Unreleased]
 
+### Changed
+- Development continues on `0.1.6-SNAPSHOT` after the `0.1.5` GitHub release
+
 ## [0.1.5] - 2026-10-20
 
 GitHub-only release (no Maven Central — secrets not configured; see `docs/RELEASE.md` Path A).
