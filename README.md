@@ -114,3 +114,9 @@ Unsupported `Content-Type` → HTTP **415** with a Connect JSON error body.
 ## License
 
 [Apache License 2.0](LICENSE) — SPDX `Apache-2.0`.
+
+## Maintenance
+
+See [AGENTS.md](AGENTS.md) for agent-maintainer rules. CI, Dependabot, CODEOWNERS, and the
+tag-gated publish workflow follow house style from
+[lldata/quarkus-kotlin-typescript-rest-client-generator](https://github.com/lldata/quarkus-kotlin-typescript-rest-client-generator).

@@ -3,8 +3,15 @@ plugins {
 }
 
 val quarkusVersion = rootProject.property("quarkusVersion") as String
+val jdkToolchainVersion = rootProject.property("jdkToolchainVersion") as String
 
 description = "Quarkus Connect RPC - Deployment"
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(jdkToolchainVersion.toInt()))
+    }
+}
 
 dependencies {
     implementation(project(":quarkus-connect"))

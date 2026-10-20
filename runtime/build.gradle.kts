@@ -25,6 +25,8 @@ kotlin {
     compilerOptions {
         // Library floor, not build floor — same split as the house reference repo.
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(jvmTargetVersion))
+        apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
         freeCompilerArgs.add("-Xjdk-release=$jvmTargetVersion")
         javaParameters.set(true)
     }

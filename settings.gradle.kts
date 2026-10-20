@@ -1,6 +1,6 @@
 pluginManagement {
-    val quarkusVersion: String by settings
-    val kotlinVersion: String by settings
+    val quarkusVersion = providers.gradleProperty("quarkusVersion").get()
+    val kotlinVersion = providers.gradleProperty("kotlinVersion").get()
     repositories {
         mavenCentral()
         gradlePluginPortal()
@@ -10,7 +10,8 @@ pluginManagement {
         id("io.quarkus.extension") version quarkusVersion
         id("org.jetbrains.kotlin.jvm") version kotlinVersion
         id("org.jetbrains.kotlin.plugin.allopen") version kotlinVersion
-        id("com.google.protobuf") version "0.9.4"
+        // 0.10.x required for Gradle 9 (detachedConfiguration extension error on 0.9.x)
+        id("com.google.protobuf") version "0.10.0"
     }
 }
 
