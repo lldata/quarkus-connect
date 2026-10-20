@@ -50,3 +50,15 @@ Preferred: ordinary Quarkus `@GrpcService` beans. Low-level CDI beans implementi
 Client/bidi Connect handlers buffer the HTTP request body for the vertical slice (fine for
 demos; large or interactive streams can move to chunked reads later). Native `application/grpc`
 still reaches quarkus-grpc.
+
+## Clients (not this extension)
+
+**quarkus-connect is the server.** JVM / Quarkus apps that need a Connect **client** should
+use the official **Quarkus Connect client** path: ConnectRPC’s
+[Connect-Kotlin](https://connectrpc.com/docs/kotlin/getting-started/)
+(`com.connectrpc:connect-kotlin`, OkHttp transport `com.connectrpc:connect-kotlin-okhttp`).
+There is no separate Quarkus-catalog Connect-client extension to prefer over that.
+
+Non-JVM examples in this repo: Flutter (`examples/flutter-web-client`); other ecosystems use
+[connect-es](https://connectrpc.com/docs/web/getting-started/) and siblings. Do not treat
+“no JVM client in this repository” as a product gap.
