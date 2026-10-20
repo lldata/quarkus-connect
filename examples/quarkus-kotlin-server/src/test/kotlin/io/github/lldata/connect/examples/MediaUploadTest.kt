@@ -20,7 +20,8 @@ class MediaUploadTest {
     @Test
     fun `chunked upload resume and idempotent complete with range playback`() {
         val clientRequestId = UUID.randomUUID().toString()
-        val payload = ByteArray(300_000) { (it % 251).toByte() } // ~300KB proof (same path as 100MB+)
+        // ~1.5MB multi-chunk proof (same path as 100MB+; full EDGE soak remains manual).
+        val payload = ByteArray(1_500_000) { (it % 251).toByte() }
         val chunkSize = 64_000
 
         given()

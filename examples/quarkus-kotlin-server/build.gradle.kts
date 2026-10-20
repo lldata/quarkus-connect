@@ -35,4 +35,6 @@ dependencies {
 
     testImplementation("io.quarkus:quarkus-junit5")
     testImplementation("io.rest-assured:rest-assured")
+    // Enables quarkus.otel.traces.exporter=logging in tests (CI without OTLP collector).
+    testImplementation("io.opentelemetry:opentelemetry-exporter-logging")
 }

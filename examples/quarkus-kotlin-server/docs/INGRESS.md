@@ -43,8 +43,10 @@ for media seek — hence `exposed-headers`.
 ## OpenTelemetry
 
 `RpcTracingInterceptor` creates one span per RPC with procedure name + status
-(no payloads). Example defaults `quarkus.otel.traces.exporter=none`; point at OTLP
-for ACA/Cloudflare-adjacent collectors:
+(no payloads). Example defaults `quarkus.otel.traces.exporter=none` for local
+dev; tests use the **logging** exporter so CI proves spans without a collector.
+
+Point production at OTLP for ACA/Cloudflare-adjacent collectors:
 
 ```properties
 quarkus.otel.exporter.otlp.endpoint=http://otel-collector:4317
