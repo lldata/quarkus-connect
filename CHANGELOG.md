@@ -8,13 +8,14 @@ version is tagged.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-20
+
+GitHub-only release (no Maven Central — secrets not configured; see `docs/RELEASE.md` Path A).
+
 ### Added
 - **Opt-in Quarkus Security** for Connect / gRPC-Web: propagate `SecurityIdentity`, honor
   `@RolesAllowed` / `@Authenticated` when the app adds `quarkus-security` (+ mechanism);
   no hard Security/OIDC/JWT deps on Connect core. Covered by `:integration-tests-security`.
-
-### Changed
-- Development continues on `0.1.5-SNAPSHOT` after the `0.1.4` GitHub release
 
 ## [0.1.4] - 2026-10-20
 
