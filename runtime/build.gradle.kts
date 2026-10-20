@@ -33,7 +33,8 @@ kotlin {
 }
 
 dependencies {
-    implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:$quarkusVersion"))
+    // `platform` (not enforcedPlatform) — Central rejects published enforced platforms.
+    implementation(platform("io.quarkus.platform:quarkus-bom:$quarkusVersion"))
     implementation("io.quarkus:quarkus-arc")
     implementation("io.quarkus:quarkus-vertx-http")
     implementation("io.quarkus:quarkus-kotlin")

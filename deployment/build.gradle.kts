@@ -16,7 +16,8 @@ java {
 dependencies {
     implementation(project(":quarkus-connect"))
 
-    implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:$quarkusVersion"))
+    // `platform` (not enforcedPlatform) — Central rejects published enforced platforms.
+    implementation(platform("io.quarkus.platform:quarkus-bom:$quarkusVersion"))
     implementation("io.quarkus:quarkus-arc-deployment")
     implementation("io.quarkus:quarkus-vertx-http-deployment")
     implementation("io.quarkus:quarkus-kotlin-deployment")

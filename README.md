@@ -5,7 +5,7 @@
 
 Quarkus extension that serves ordinary `@GrpcService` beans as **gRPC + Connect + gRPC-Web** on the **Quarkus HTTP port**. Existing gRPC `ServerInterceptor`s apply to Connect and gRPC-Web.
 
-Kotlin-first runtime with a Java-friendly SPI.
+Kotlin-first runtime with a Java-friendly SPI ([docs/SPI.md](docs/SPI.md)).
 
 **License:** [Apache License 2.0](LICENSE) (SPDX: `Apache-2.0`).  
 **Build:** Gradle.
@@ -72,6 +72,9 @@ See **`examples/quarkus-kotlin-server`** and **`examples/flutter-web-client`**.
 - `:quarkus-connect-deployment` (`deployment/`) — Quarkus build steps
 - `:integration-tests` — `@GrpcService` + interceptor + Connect/gRPC-Web RestAssured
 - `examples/` — Kotlin server + Flutter web client
+
+Published to Maven Central (when tagged): `io.github.lldata:quarkus-connect` and
+`io.github.lldata:quarkus-connect-deployment`. Local: `./gradlew publishToMavenLocal`.
 
 ## Build
 

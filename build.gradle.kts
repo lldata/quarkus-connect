@@ -1,3 +1,8 @@
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.JavaLibrary
+import com.vanniktech.maven.publish.KotlinJvm
+import com.vanniktech.maven.publish.SourcesJar
+
 plugins {
     base
     id("org.jetbrains.kotlin.jvm") apply false
@@ -5,6 +10,9 @@ plugins {
     id("io.quarkus") apply false
     id("io.quarkus.extension") apply false
     id("com.google.protobuf") apply false
+    // Publishing: applied only to the two published modules below.
+    id("com.vanniktech.maven.publish") version "0.37.0" apply false
+    id("org.jetbrains.dokka") version "2.2.0" apply false
 }
 
 allprojects {
@@ -32,6 +40,125 @@ subprojects {
         tasks.withType<Test>().configureEach {
             useJUnitPlatform()
             systemProperty("java.util.logging.manager", "org.jboss.logmanager.LogManager")
+        }
+    }
+}
+
+val repository = "https://github.com/lldata/quarkus-connect"
+
+/** A `-SNAPSHOT` is not signed and Central does not ask it to be. */
+val isSnapshot = version.toString().endsWith("SNAPSHOT")
+
+/**
+ * Signing needs a key, and `publishToMavenLocal` is the documented way to try the library out —
+ * so it must not require one. Signing therefore turns on when the key is there rather than on
+ * the version being a release; the publish workflow refuses to run at all without the secrets.
+ */
+val canSign =
+    listOf("signingInMemoryKey", "signingInMemoryKeyPassword")
+        .all { !project.findProperty(it)?.toString().isNullOrBlank() }
+
+/**
+ * Published artifacts only. Examples and integration-tests are not published.
+ *
+ * Central Portal upload is deliberate (not `automaticRelease`): a human presses Publish.
+ */
+data class PublishedModule(
+    val projectPath: String,
+    val artifactId: String,
+    val summary: String,
+    val kotlin: Boolean,
+)
+
+val published =
+    listOf(
+        PublishedModule(
+            ":quarkus-connect",
+            "quarkus-connect",
+            "Connect RPC server for Quarkus — serve @GrpcService as gRPC + Connect + gRPC-Web on one HTTP port.",
+            kotlin = true,
+        ),
+        PublishedModule(
+            ":quarkus-connect-deployment",
+            "quarkus-connect-deployment",
+            "Quarkus build-time steps for quarkus-connect.",
+            kotlin = false,
+        ),
+    )
+
+published.forEach { mod ->
+    project(mod.projectPath) {
+        apply(plugin = "com.vanniktech.maven.publish")
+        if (mod.kotlin) {
+            apply(plugin = "org.jetbrains.dokka")
+        }
+
+        val configurePublication: () -> Unit = {
+            configure<com.vanniktech.maven.publish.MavenPublishBaseExtension> {
+                publishToMavenCentral()
+                if (!isSnapshot && canSign) {
+                    signAllPublications()
+                }
+
+                if (mod.kotlin) {
+                    configure(
+                        KotlinJvm(
+                            javadocJar = JavadocJar.Dokka("dokkaGeneratePublicationHtml"),
+                            sourcesJar = SourcesJar.Sources(),
+                        ),
+                    )
+                } else {
+                    // Deployment module has only build-step classes; empty javadoc jar satisfies Central.
+                    configure(
+                        JavaLibrary(
+                            javadocJar = JavadocJar.Empty(),
+                            sourcesJar = SourcesJar.Sources(),
+                        ),
+                    )
+                }
+
+                coordinates(rootProject.group.toString(), mod.artifactId, rootProject.version.toString())
+
+                pom {
+                    name.set(mod.artifactId)
+                    description.set(mod.summary)
+                    url.set(repository)
+                    organization {
+                        name.set("LL Data ApS")
+                        url.set("https://lldata.dk")
+                    }
+                    issueManagement {
+                        system.set("GitHub")
+                        url.set("$repository/issues")
+                    }
+                    licenses {
+                        license {
+                            name.set("Apache License 2.0")
+                            url.set("https://raw.githubusercontent.com/lldata/quarkus-connect/main/LICENSE")
+                            distribution.set("repo")
+                        }
+                    }
+                    scm {
+                        url.set(repository)
+                        connection.set("scm:git:$repository.git")
+                        developerConnection.set("scm:git:ssh://git@github.com/lldata/quarkus-connect.git")
+                    }
+                    developers {
+                        developer {
+                            id.set("lldata")
+                            name.set("Lasse Lindgard")
+                            email.set("lasse@lldata.dk")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Root script is evaluated before module plugins apply; wait for the language plugin.
+        if (mod.kotlin) {
+            plugins.withId("org.jetbrains.kotlin.jvm") { configurePublication() }
+        } else {
+            plugins.withId("java-library") { configurePublication() }
         }
     }
 }
