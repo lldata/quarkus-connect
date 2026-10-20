@@ -129,4 +129,16 @@ class UploadSession {
       headers: _auth(),
     );
   }
+
+  /// Connect server-streaming catch-up: yields messages then completes.
+  /// Caller advances [afterSequence] and reconnects for continuous live updates.
+  Stream<Message> watchMessages({Int64? afterSequence, int limit = 50}) {
+    return _client().watchMessages(
+      WatchMessagesRequest(
+        afterSequence: afterSequence ?? Int64.ZERO,
+        limit: limit,
+      ),
+      headers: _auth(),
+    );
+  }
 }

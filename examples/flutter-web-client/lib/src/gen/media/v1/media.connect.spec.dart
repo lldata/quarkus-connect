@@ -58,4 +58,13 @@ abstract final class MediaService {
     mediav1media.ListMessagesRequest.new,
     mediav1media.ListMessagesResponse.new,
   );
+
+  /// Connect server streaming (`application/connect+json|proto`): catch-up then complete.
+  /// Client reconnects with the last seen sequence for continuous live updates.
+  static const watchMessages = connect.Spec(
+    '/$name/WatchMessages',
+    connect.StreamType.server,
+    mediav1media.WatchMessagesRequest.new,
+    mediav1media.Message.new,
+  );
 }

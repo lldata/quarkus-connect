@@ -116,4 +116,23 @@ extension type MediaServiceClient (connect.Transport _transport) {
       onTrailer: onTrailer,
     );
   }
+
+  /// Connect server streaming (`application/connect+json|proto`): catch-up then complete.
+  /// Client reconnects with the last seen sequence for continuous live updates.
+  Stream<mediav1media.Message> watchMessages(
+    mediav1media.WatchMessagesRequest input, {
+    connect.Headers? headers,
+    connect.AbortSignal? signal,
+    Function(connect.Headers)? onHeader,
+    Function(connect.Headers)? onTrailer,
+  }) {
+    return connect.Client(_transport).server(
+      specs.MediaService.watchMessages,
+      input,
+      signal: signal,
+      headers: headers,
+      onHeader: onHeader,
+      onTrailer: onTrailer,
+    );
+  }
 }

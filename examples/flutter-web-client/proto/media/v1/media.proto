@@ -25,6 +25,10 @@ service MediaService {
 
   // Polling live updates: return messages newer than after_sequence.
   rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+
+  // Connect server streaming (`application/connect+json|proto`): catch-up then complete.
+  // Client reconnects with the last seen sequence for continuous live updates.
+  rpc WatchMessages(WatchMessagesRequest) returns (stream Message);
 }
 
 enum MediaKind {
@@ -104,6 +108,12 @@ message ListMessagesRequest {
 message ListMessagesResponse {
   repeated Message messages = 1;
   int64 latest_sequence = 2;
+}
+
+message WatchMessagesRequest {
+  // Stream messages with sequence > after_sequence (0 = from start).
+  int64 after_sequence = 1;
+  int32 limit = 2;
 }
 
 message Message {

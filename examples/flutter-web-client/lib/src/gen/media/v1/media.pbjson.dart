@@ -211,6 +211,20 @@ final $typed_data.Uint8List listMessagesResponseDescriptor = $convert.base64Deco
     'ChRMaXN0TWVzc2FnZXNSZXNwb25zZRItCghtZXNzYWdlcxgBIAMoCzIRLm1lZGlhLnYxLk1lc3'
     'NhZ2VSCG1lc3NhZ2VzEicKD2xhdGVzdF9zZXF1ZW5jZRgCIAEoA1IObGF0ZXN0U2VxdWVuY2U=');
 
+@$core.Deprecated('Use watchMessagesRequestDescriptor instead')
+const WatchMessagesRequest$json = {
+  '1': 'WatchMessagesRequest',
+  '2': [
+    {'1': 'after_sequence', '3': 1, '4': 1, '5': 3, '10': 'afterSequence'},
+    {'1': 'limit', '3': 2, '4': 1, '5': 5, '10': 'limit'},
+  ],
+};
+
+/// Descriptor for `WatchMessagesRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List watchMessagesRequestDescriptor = $convert.base64Decode(
+    'ChRXYXRjaE1lc3NhZ2VzUmVxdWVzdBIlCg5hZnRlcl9zZXF1ZW5jZRgBIAEoA1INYWZ0ZXJTZX'
+    'F1ZW5jZRIUCgVsaW1pdBgCIAEoBVIFbGltaXQ=');
+
 @$core.Deprecated('Use messageDescriptor instead')
 const Message$json = {
   '1': 'Message',
@@ -248,6 +262,7 @@ const $core.Map<$core.String, $core.dynamic> MediaServiceBase$json = {
     {'1': 'CompleteUpload', '2': '.media.v1.CompleteUploadRequest', '3': '.media.v1.CompleteUploadResponse'},
     {'1': 'GetMessage', '2': '.media.v1.GetMessageRequest', '3': '.media.v1.GetMessageResponse'},
     {'1': 'ListMessages', '2': '.media.v1.ListMessagesRequest', '3': '.media.v1.ListMessagesResponse'},
+    {'1': 'WatchMessages', '2': '.media.v1.WatchMessagesRequest', '3': '.media.v1.Message', '6': true},
   ],
 };
 
@@ -266,6 +281,7 @@ const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>> MediaServi
   '.media.v1.GetMessageResponse': GetMessageResponse$json,
   '.media.v1.ListMessagesRequest': ListMessagesRequest$json,
   '.media.v1.ListMessagesResponse': ListMessagesResponse$json,
+  '.media.v1.WatchMessagesRequest': WatchMessagesRequest$json,
 };
 
 /// Descriptor for `MediaService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
@@ -278,5 +294,7 @@ final $typed_data.Uint8List mediaServiceDescriptor = $convert.base64Decode(
     'RpYS52MS5Db21wbGV0ZVVwbG9hZFJlcXVlc3QaIC5tZWRpYS52MS5Db21wbGV0ZVVwbG9hZFJl'
     'c3BvbnNlEkcKCkdldE1lc3NhZ2USGy5tZWRpYS52MS5HZXRNZXNzYWdlUmVxdWVzdBocLm1lZG'
     'lhLnYxLkdldE1lc3NhZ2VSZXNwb25zZRJNCgxMaXN0TWVzc2FnZXMSHS5tZWRpYS52MS5MaXN0'
-    'TWVzc2FnZXNSZXF1ZXN0Gh4ubWVkaWEudjEuTGlzdE1lc3NhZ2VzUmVzcG9uc2U=');
+    'TWVzc2FnZXNSZXF1ZXN0Gh4ubWVkaWEudjEuTGlzdE1lc3NhZ2VzUmVzcG9uc2USRAoNV2F0Y2'
+    'hNZXNzYWdlcxIeLm1lZGlhLnYxLldhdGNoTWVzc2FnZXNSZXF1ZXN0GhEubWVkaWEudjEuTWVz'
+    'c2FnZTAB');
 

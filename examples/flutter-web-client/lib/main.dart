@@ -161,6 +161,27 @@ class _DemoHomePageState extends State<DemoHomePage> {
     }
   }
 
+  Future<void> _watchMessages() async {
+    setState(() => _busy = true);
+    try {
+      final buf = StringBuffer('WatchMessages (Connect stream)\nafter=$_pollAfter\n');
+      var count = 0;
+      await for (final m in _uploadSession().watchMessages(afterSequence: _pollAfter)) {
+        count++;
+        if (m.sequence > _pollAfter) {
+          _pollAfter = m.sequence;
+        }
+        buf.writeln('- ${m.messageId} ${m.filename} ${m.sizeBytes}B seq=${m.sequence}');
+      }
+      buf.writeln('stream completed ($count messages); reconnect with after=$_pollAfter');
+      setState(() => _log = buf.toString());
+    } catch (e) {
+      setState(() => _log = 'WatchMessages error\n$e');
+    } finally {
+      setState(() => _busy = false);
+    }
+  }
+
   @override
   void dispose() {
     _baseUrlController.dispose();
@@ -220,6 +241,10 @@ class _DemoHomePageState extends State<DemoHomePage> {
                 OutlinedButton(
                   onPressed: _busy ? null : _pollMessages,
                   child: const Text('Poll messages'),
+                ),
+                FilledButton.tonal(
+                  onPressed: _busy ? null : _watchMessages,
+                  child: const Text('Watch stream'),
                 ),
               ],
             ),
