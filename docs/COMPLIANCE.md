@@ -22,7 +22,7 @@ in-repo so external users see the same floor.
 | Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false`; conformance `PROTOCOL_GRPC` (proto; JSON excluded). Error-detail trailers still padded by Vert.x `Utils.writeMetadata` (known-flaky) |
 | Interceptors on Connect | **Yes** | `@GlobalInterceptor` via bridge |
 | Quarkus Security on Connect | **Opt-in** | App adds `quarkus-security` + mechanism; identity propagation + `@RolesAllowed` / `@Authenticated` on Connect/gRPC-Web (`:integration-tests-security`) |
-| Quarkus Connect *client* | **Out of scope** | |
+| JVM Connect *client* | **Official, external** | This repo is **server-only**. Use [Connect-Kotlin](https://connectrpc.com/docs/kotlin/getting-started/) (`com.connectrpc:connect-kotlin`, transport `com.connectrpc:connect-kotlin-okhttp`) — the Quarkus Connect client for JVM/Kotlin. Not a gap to build here. |
 
 ## Examples proof (summary)
 

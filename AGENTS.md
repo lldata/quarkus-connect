@@ -18,8 +18,10 @@ on one Quarkus HTTP port. Kotlin-first runtime with a Java-friendly SPI
 Consequences that decide most scope questions:
 
 - **v1 server surface.** Unary Connect + gRPC-Web, Connect server streaming
-  (`application/connect+*`), and native gRPC on the shared HTTP port. A Quarkus-side Connect
-  *client* is out of scope unless a trusted author expands that floor.
+  (`application/connect+*`), and native gRPC on the shared HTTP port. Do **not** ship or
+  plan a JVM Connect *client* here — the official Quarkus Connect client is already
+  [Connect-Kotlin](https://connectrpc.com/docs/kotlin/getting-started/)
+  (`com.connectrpc:connect-kotlin` / `connect-kotlin-okhttp`).
 - **Protocol honesty over convenience.** Unsupported content types and Connect errors must
   map to the protocol, not to a friendlier HTTP-only shape.
 - **SPI stays Java-callable.** Prefer interfaces and types a Java service can implement
@@ -133,7 +135,8 @@ Apache License 2.0 only (`LICENSE`, README badge, Gradle coordinates).
 ## Scope reminders
 
 - Serve ordinary `@GrpcService` as gRPC + Connect + gRPC-Web on one HTTP port (including
-  Connect server streaming); Quarkus Connect client is later
+  Connect server streaming); JVM clients use official Connect-Kotlin — never list “no
+  client” as a quarkus-connect gap
 - Prefer `@GrpcService` in examples — no hand-written per-RPC Connect handlers
 - Keep the protocol SPI Java-friendly (`docs/SPI.md`); Kotlin is the primary implementation language
 - Do not use product/codename branding in branch, module, package, or doc titles

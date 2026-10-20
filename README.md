@@ -26,7 +26,7 @@ Kotlin-first runtime with a Java-friendly SPI ([docs/SPI.md](docs/SPI.md)).
 | Packed `google.rpc` error details | Yes |
 | Client deadlines (`connect-timeout-ms`) | Yes |
 | Compression (`gzip` + `identity`) | Yes — unary + server streaming |
-| Quarkus-side Connect client | Out of scope for v1 |
+| JVM Connect **client** | **Not this extension** — use the official [Connect-Kotlin](https://connectrpc.com/docs/kotlin/getting-started/) client (`com.connectrpc:connect-kotlin` / `connect-kotlin-okhttp`). Non-JVM: Flutter / connect-es |
 
 ## Coordinates
 
