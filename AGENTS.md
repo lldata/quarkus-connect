@@ -123,8 +123,10 @@ Apache License 2.0 only (`LICENSE`, README badge, Gradle coordinates).
 ## Known gaps (do not pretend these are done)
 
 - Central / signing repository secrets may still be unset — publish fails closed until they exist.
-- Agent automation needs `CLAUDE_CODE_OAUTH_TOKEN` — workflows fail closed without it.
+- Agent automation needs `CLAUDE_CODE_OAUTH_TOKEN` + Claude Code GitHub App — model jobs skip without them.
+- Connect **client/bidi streaming** not bridged yet (returns `unimplemented`; native gRPC still serves them).
 - Quarkus platform version is pinned deliberately; re-bump with care.
+- See [docs/RELEASE.md](docs/RELEASE.md) before the first tagged release.
 
 
 ## Scope reminders

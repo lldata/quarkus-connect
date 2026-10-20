@@ -40,7 +40,8 @@ reload mid-upload can resume.
 
 Live updates:
 
-- **Watch stream** — Connect server streaming `WatchMessages` (`application/connect+json`)
+- **Watch stream** — Connect server streaming `WatchMessages` with up to 3 reconnect attempts;
+  the UI shows `after_sequence` so you can see resume progress
 - **Poll messages** — unary `ListMessages` fallback
 
 See server `docs/LIVE_UPDATES.md` for reconnect semantics.

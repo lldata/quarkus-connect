@@ -333,6 +333,21 @@ class GreetConnectTest {
     }
 
     @Test
+    fun `client-streaming RPC returns Connect unimplemented not 404`() {
+        given()
+            .header("Content-Type", "application/json")
+            .header("connect-protocol-version", "1")
+            .header("Authorization", auth)
+            .body("""{"name":"x"}""")
+            .`when`()
+            .post("/greet.v1.GreetService/CollectGreetings")
+            .then()
+            .statusCode(501)
+            .body("code", equalTo("unimplemented"))
+            .body("message", org.hamcrest.Matchers.containsString("CLIENT_STREAMING"))
+    }
+
+    @Test
     fun `grpc-web unauthenticated`() {
         val request = GreetRequest.newBuilder().setName("Web").build()
         val framed = grpcWebDataFrame(request.toByteArray())

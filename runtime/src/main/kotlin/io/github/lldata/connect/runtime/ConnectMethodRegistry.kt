@@ -27,6 +27,8 @@ class ConnectMethodRegistry {
 
     private lateinit var byProcedure: Map<String, ConnectUnaryMethod<out Message, out Message>>
     private lateinit var streamsByProcedure: Map<String, ConnectServerStreamMethod<out Message, out Message>>
+    /** procedure → gRPC MethodType name (CLIENT_STREAMING / BIDI_STREAMING). */
+    private lateinit var unsupportedByProcedure: Map<String, String>
 
     @PostConstruct
     fun init() {
@@ -47,6 +49,9 @@ class ConnectMethodRegistry {
             putStream(streams, method)
         }
         streamsByProcedure = streams.toMap()
+
+        unsupportedByProcedure = grpcBridge.unsupportedConnectProcedures()
+            .mapKeys { normalizeProcedure(it.key) }
     }
 
     fun find(procedure: String): ConnectUnaryMethod<out Message, out Message>? =
@@ -54,6 +59,10 @@ class ConnectMethodRegistry {
 
     fun findStream(procedure: String): ConnectServerStreamMethod<out Message, out Message>? =
         streamsByProcedure[normalizeProcedure(procedure)]
+
+    /** Non-null when the procedure exists on a `@GrpcService` but is not Connect-bridged. */
+    fun unsupportedType(procedure: String): String? =
+        unsupportedByProcedure[normalizeProcedure(procedure)]
 
     fun procedures(): Set<String> = byProcedure.keys
 

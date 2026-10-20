@@ -163,24 +163,41 @@ class _DemoHomePageState extends State<DemoHomePage> {
 
   Future<void> _watchMessages() async {
     setState(() => _busy = true);
+    final buf = StringBuffer('WatchMessages (Connect stream, up to 3 reconnects)\n');
+    var total = 0;
     try {
-      final buf = StringBuffer('WatchMessages (Connect stream)\nafter=$_pollAfter\n');
-      var count = 0;
-      await for (final m in _uploadSession().watchMessages(afterSequence: _pollAfter)) {
-        count++;
-        if (m.sequence > _pollAfter) {
-          _pollAfter = m.sequence;
+      for (var attempt = 1; attempt <= 3; attempt++) {
+        buf.writeln('— attempt $attempt after=$_pollAfter');
+        var count = 0;
+        try {
+          await for (final m in _uploadSession().watchMessages(afterSequence: _pollAfter)) {
+            count++;
+            total++;
+            if (m.sequence > _pollAfter) {
+              _pollAfter = m.sequence;
+            }
+            buf.writeln('- ${m.messageId} ${m.filename} ${m.sizeBytes}B seq=${m.sequence}');
+          }
+          buf.writeln('stream completed ($count messages this attempt)');
+          // Catch-up streams end when backlog is drained; stop unless empty on first try.
+          if (count > 0 || attempt == 1) break;
+        } catch (e) {
+          buf.writeln('attempt $attempt error: $e');
+          if (attempt == 3) rethrow;
+          await Future<void>.delayed(Duration(milliseconds: 200 * attempt));
         }
-        buf.writeln('- ${m.messageId} ${m.filename} ${m.sizeBytes}B seq=${m.sequence}');
       }
-      buf.writeln('stream completed ($count messages); reconnect with after=$_pollAfter');
+      buf.writeln('done; next after=$_pollAfter (total $total)');
       setState(() => _log = buf.toString());
     } catch (e) {
-      setState(() => _log = 'WatchMessages error\n$e');
+      buf.writeln('WatchMessages failed\n$e');
+      setState(() => _log = buf.toString());
     } finally {
       setState(() => _busy = false);
     }
   }
+
+  void _clearLog() => setState(() => _log = '');
 
   @override
   void dispose() {
@@ -246,7 +263,13 @@ class _DemoHomePageState extends State<DemoHomePage> {
                   onPressed: _busy ? null : _watchMessages,
                   child: const Text('Watch stream'),
                 ),
+                TextButton(onPressed: _busy ? null : _clearLog, child: const Text('Clear')),
               ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Live cursor after_sequence=$_pollAfter',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             if (_busy && _uploadProgress > 0) ...[
               const SizedBox(height: 12),

@@ -52,17 +52,20 @@ class ConnectUnaryHttpHandler(
         if (wire == WireProtocol.CONNECT_STREAM) {
             val stream = registry.findStream(procedure)
             if (stream == null) {
-                // Unknown stream procedure — do not steal unrelated routes.
-                if (registry.find(procedure) != null) {
-                    writeConnectError(
+                when {
+                    registry.find(procedure) != null -> writeConnectError(
                         ctx,
                         ConnectException(
                             ConnectCode.UNIMPLEMENTED,
                             "Procedure /$procedure is unary; use application/proto or application/json",
                         ),
                     )
-                } else {
-                    ctx.next()
+                    registry.unsupportedType(procedure) != null -> writeConnectStreamError(
+                        ctx,
+                        unimplementedStreaming(procedure, registry.unsupportedType(procedure)!!),
+                        contentType,
+                    )
+                    else -> ctx.next()
                 }
                 return
             }
@@ -76,6 +79,11 @@ class ConnectUnaryHttpHandler(
 
         val method = registry.find(procedure)
         if (method == null) {
+            val unsupported = registry.unsupportedType(procedure)
+            if (unsupported != null) {
+                writeConnectError(ctx, unimplementedStreaming(procedure, unsupported))
+                return
+            }
             ctx.next()
             return
         }
@@ -488,6 +496,13 @@ class ConnectUnaryHttpHandler(
         }
         return millis.takeIf { it > 0 }
     }
+
+    private fun unimplementedStreaming(procedure: String, grpcType: String): ConnectException =
+        ConnectException(
+            ConnectCode.UNIMPLEMENTED,
+            "Connect does not support $grpcType for /$procedure yet " +
+                "(unary and server-streaming only; client/bidi streaming planned later)",
+        )
 
     companion object {
         fun detectWireProtocol(contentType: String?, method: HttpMethod): WireProtocol {

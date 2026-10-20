@@ -45,3 +45,7 @@ Build: JDK **21** toolchain, library bytecode **JVM 17**. `./gradlew check`.
 Preferred: ordinary Quarkus `@GrpcService` beans. Low-level CDI beans implementing
 `ConnectUnaryMethod` / `ConnectServerStreamMethod` remain supported (see integration-tests
 `PingConnectMethod`).
+
+Client-streaming and bidi `@GrpcService` methods are discovered but **not** bridged to Connect;
+Connect/gRPC-Web requests for those procedures return `unimplemented` with the gRPC method type
+named in the message. Native `application/grpc` still reaches quarkus-grpc.
