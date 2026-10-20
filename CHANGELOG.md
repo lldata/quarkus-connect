@@ -9,17 +9,23 @@ version is tagged.
 ## [Unreleased]
 
 ### Changed
-- Development continues on `0.1.1-SNAPSHOT` after the `0.1.0` GitHub release
+- Development continues on `0.1.2-SNAPSHOT` after the `0.1.1` GitHub release
+
+## [0.1.1] - 2026-10-20
+
+GitHub-only release (no Maven Central — secrets not configured; see `docs/RELEASE.md` Path A).
 
 ### Fixed
 - Preserve multi-value gRPC response headers/trailers through the Connect bridge (`Metadata.getAll` + Vert.x `headers().add`)
 - Forward `connect-timeout-ms` into gRPC metadata so handlers can echo client deadlines (Deadline Propagation conformance)
 - Flush Connect stream/error response headers (pending `sendHeaders` on close; leading metadata before first envelope)
 - Align unexpected-request HTTP/status mapping with connect-go (405/415 empty bodies, stream cardinality, compressed+identity)
-- Thin Connect `connectconformance` matrix **364/364** (no known-failing entries)
 - gRPC-Web **streaming** (server/client/bidi) + compressed frames (`grpc-encoding` / gzip)
 - Unpadded base64 for binary trailers (`grpc-status-details-bin`); echo `grpc-timeout` for Deadline Propagation
-- Connect + gRPC-Web HTTP/1 `connectconformance` matrix **654/654**
+
+### Conformance
+- Connect-only thin matrix **364/364**
+- Connect + gRPC-Web HTTP/1 matrix **654/654** (no known-failing entries)
 
 ## [0.1.0] - 2026-10-20
 
@@ -43,6 +49,6 @@ First public GitHub release (no Maven Central — secrets not configured; see `d
 - JSON codec registers protobuf `Any` types from the message file descriptor (needed for conformance payloads)
 - GitHub-only release packaging script (`scripts/package-github-release.sh`)
 
-[Unreleased]: https://github.com/lldata/quarkus-connect/compare/v0.1.0...HEAD
-[0.1.1-SNAPSHOT]: https://github.com/lldata/quarkus-connect/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/lldata/quarkus-connect/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.1
 [0.1.0]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.0
