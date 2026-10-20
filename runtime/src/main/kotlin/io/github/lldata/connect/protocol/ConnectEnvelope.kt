@@ -55,17 +55,35 @@ object ConnectEnvelope {
     }
 
     /**
+     * Decode the single data envelope required for Connect unary-request streams
+     * (server-streaming). Zero or multiple envelopes are a cardinality violation →
+     * [ConnectCode.UNIMPLEMENTED] (matches connect-go / gRPC status guidance).
+     */
+    fun decodeExactlyOneDataMessage(
+        body: ByteArray,
+        requestEncoding: String? = ConnectCompression.IDENTITY,
+    ): ByteArray {
+        val all = decodeAllDataMessages(body, requestEncoding)
+        return when (all.size) {
+            0 -> throw ConnectException(
+                ConnectCode.UNIMPLEMENTED,
+                "unary request has zero messages",
+            )
+            1 -> all[0]
+            else -> throw ConnectException(
+                ConnectCode.UNIMPLEMENTED,
+                "unary request has multiple messages",
+            )
+        }
+    }
+
+    /**
      * Decode the first data envelope from a Connect streaming request body.
      * When the compressed flag is set, [requestEncoding] (from `connect-content-encoding`)
      * is used to decompress the payload.
      */
-    fun decodeFirstDataMessage(body: ByteArray, requestEncoding: String? = ConnectCompression.IDENTITY): ByteArray {
-        val all = decodeAllDataMessages(body, requestEncoding)
-        if (all.isEmpty()) {
-            throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Connect stream request has no data envelopes")
-        }
-        return all[0]
-    }
+    fun decodeFirstDataMessage(body: ByteArray, requestEncoding: String? = ConnectCompression.IDENTITY): ByteArray =
+        decodeExactlyOneDataMessage(body, requestEncoding)
 
     /**
      * Decode every data envelope from a Connect streaming request body (client streaming).
@@ -88,9 +106,10 @@ object ConnectEnvelope {
             out += if (flag and FLAG_COMPRESSED != 0) {
                 val encoding = ConnectCompression.normalize(requestEncoding)
                 if (encoding == ConnectCompression.IDENTITY) {
+                    // Protocol error: compressed bit set without a real compression pool.
                     throw ConnectException(
-                        ConnectCode.INVALID_ARGUMENT,
-                        "Compressed envelope requires connect-content-encoding (not identity)",
+                        ConnectCode.INTERNAL,
+                        "protocol error: sent compressed message without compression support",
                     )
                 }
                 ConnectCompression.decompress(encoding, payload)

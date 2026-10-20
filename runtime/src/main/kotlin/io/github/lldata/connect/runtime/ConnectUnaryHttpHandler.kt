@@ -38,11 +38,6 @@ class ConnectUnaryHttpHandler(
 
     override fun handle(ctx: RoutingContext) {
         val request = ctx.request()
-        if (request.method() != HttpMethod.POST && request.method() != HttpMethod.GET) {
-            writeConnectError(ctx, ConnectException(ConnectCode.UNIMPLEMENTED, "Only GET and POST are supported"))
-            return
-        }
-
         val contentType = request.getHeader(HttpHeaders.CONTENT_TYPE)
         val wire = detectWireProtocol(contentType, request.method())
         if (wire == WireProtocol.GRPC_NATIVE) {
@@ -51,29 +46,41 @@ class ConnectUnaryHttpHandler(
         }
 
         val procedure = ConnectMethodRegistry.normalizeProcedure(request.path())
+        val unary = registry.find(procedure)
+        val serverStream = registry.findStream(procedure)
+        val clientStream = registry.findClientStream(procedure)
+        val bidiStream = registry.findBidiStream(procedure)
+        val isStreamingProc = serverStream != null || clientStream != null || bidiStream != null
+
+        // connect-go: wrong verb → HTTP 405 + Allow (empty body; client maps to unknown).
+        if (request.method() != HttpMethod.POST && request.method() != HttpMethod.GET) {
+            if (unary == null && !isStreamingProc && registry.unsupportedType(procedure) == null) {
+                ctx.next()
+                return
+            }
+            writeMethodNotAllowed(ctx, if (isStreamingProc) "POST" else "GET, POST")
+            return
+        }
 
         if (wire == WireProtocol.CONNECT_STREAM) {
             if (request.method() != HttpMethod.POST) {
-                writeConnectError(ctx, ConnectException.invalidArgument("Connect streaming requires POST"))
+                writeMethodNotAllowed(ctx, "POST")
                 return
             }
-            val serverStream = registry.findStream(procedure)
             if (serverStream != null) {
                 handleConnectStream(ctx, procedure, serverStream, contentType)
                 return
             }
-            val clientStream = registry.findClientStream(procedure)
             if (clientStream != null) {
                 handleConnectClientStream(ctx, procedure, clientStream, contentType)
                 return
             }
-            val bidiStream = registry.findBidiStream(procedure)
             if (bidiStream != null) {
                 handleConnectBidiStream(ctx, procedure, bidiStream, contentType)
                 return
             }
             when {
-                registry.find(procedure) != null -> writeConnectError(
+                unary != null -> writeConnectError(
                     ctx,
                     ConnectException(
                         ConnectCode.UNIMPLEMENTED,
@@ -90,13 +97,9 @@ class ConnectUnaryHttpHandler(
             return
         }
 
-        val method = registry.find(procedure)
-        if (method == null) {
+        if (unary == null) {
             // Unary Content-Type against a streaming procedure → clear error.
-            if (registry.findStream(procedure) != null ||
-                registry.findClientStream(procedure) != null ||
-                registry.findBidiStream(procedure) != null
-            ) {
+            if (isStreamingProc) {
                 writeConnectError(
                     ctx,
                     ConnectException(
@@ -120,14 +123,14 @@ class ConnectUnaryHttpHandler(
                 writeConnectError(ctx, ConnectException.invalidArgument("GET is only supported for Connect unary"))
                 return
             }
-            handleConnectGet(ctx, procedure, method)
+            handleConnectGet(ctx, procedure, unary)
             return
         }
 
         when (wire) {
-            WireProtocol.CONNECT -> handleConnectPost(ctx, procedure, method, contentType)
+            WireProtocol.CONNECT -> handleConnectPost(ctx, procedure, unary, contentType)
             WireProtocol.CONNECT_STREAM -> Unit // handled above
-            WireProtocol.GRPC_WEB -> handleGrpcWebPost(ctx, procedure, method, contentType)
+            WireProtocol.GRPC_WEB -> handleGrpcWebPost(ctx, procedure, unary, contentType)
             WireProtocol.GRPC_NATIVE -> ctx.next()
         }
     }
@@ -539,14 +542,9 @@ class ConnectUnaryHttpHandler(
 
         val codec = ConnectCodec.fromContentType(contentType)
         if (codec == null) {
-            ctx.response()
-                .setStatusCode(415)
-                .putHeader(HttpHeaders.CONTENT_TYPE, ConnectProtocolConstants.CONTENT_TYPE_JSON)
-                .end(
-                    ConnectErrorJson.toJson(
-                        ConnectException.invalidArgument("Unsupported Content-Type; use application/proto or application/json"),
-                    ),
-                )
+            // connect-go: unsupported Content-Type → HTTP 415 + Accept-Post, empty body
+            // (client maps 415 → unknown).
+            writeUnsupportedMediaType(ctx, ACCEPT_POST_UNARY)
             return
         }
 
@@ -858,6 +856,22 @@ class ConnectUnaryHttpHandler(
         response.end(io.vertx.core.buffer.Buffer.buffer(body))
     }
 
+    /** HTTP 405 with Allow; empty body so clients map status → [ConnectCode.UNKNOWN]. */
+    private fun writeMethodNotAllowed(ctx: RoutingContext, allow: String) {
+        ctx.response()
+            .setStatusCode(405)
+            .putHeader("Allow", allow)
+            .end()
+    }
+
+    /** HTTP 415 with Accept-Post; empty body so clients map status → [ConnectCode.UNKNOWN]. */
+    private fun writeUnsupportedMediaType(ctx: RoutingContext, acceptPost: String) {
+        ctx.response()
+            .setStatusCode(415)
+            .putHeader("Accept-Post", acceptPost)
+            .end()
+    }
+
     private fun writeMetadata(
         response: io.vertx.core.http.HttpServerResponse,
         callContext: DefaultConnectCallContext,
@@ -943,6 +957,10 @@ class ConnectUnaryHttpHandler(
         )
 
     companion object {
+        private const val ACCEPT_POST_UNARY = "application/json, application/proto"
+        private const val ACCEPT_POST_STREAM =
+            "application/connect+json, application/connect+proto"
+
         fun detectWireProtocol(contentType: String?, method: HttpMethod): WireProtocol {
             if (method == HttpMethod.GET) return WireProtocol.CONNECT
             val media = contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
