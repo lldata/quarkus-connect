@@ -805,9 +805,10 @@ class ConnectUnaryHttpHandler(
         val body = GrpcWebFraming.encodeUnarySuccess(protoBytes, trailers)
         val response = ctx.response().setStatusCode(200)
         response.putHeader(HttpHeaders.CONTENT_TYPE, normalizeGrpcWebContentType(contentType))
+        val hdrs = response.headers()
         for ((name, values) in callContext.snapshotHeaders()) {
             for (value in values) {
-                response.putHeader(name, value)
+                hdrs.add(name, value)
             }
         }
         response.end(io.vertx.core.buffer.Buffer.buffer(body))
@@ -828,9 +829,10 @@ class ConnectUnaryHttpHandler(
         val response = ctx.response().setStatusCode(200)
         response.putHeader(HttpHeaders.CONTENT_TYPE, normalizeGrpcWebContentType(contentType))
         if (callContext != null) {
+            val hdrs = response.headers()
             for ((name, values) in callContext.snapshotHeaders()) {
                 for (value in values) {
-                    response.putHeader(name, value)
+                    hdrs.add(name, value)
                 }
             }
         }
@@ -841,14 +843,16 @@ class ConnectUnaryHttpHandler(
         response: io.vertx.core.http.HttpServerResponse,
         callContext: DefaultConnectCallContext,
     ) {
+        // Use headers().add — putHeader replaces prior values for the same name.
+        val headers = response.headers()
         for ((name, values) in callContext.snapshotHeaders()) {
             for (value in values) {
-                response.putHeader(name, value)
+                headers.add(name, value)
             }
         }
         for ((name, values) in callContext.snapshotTrailers()) {
             for (value in values) {
-                response.putHeader(ConnectProtocolConstants.TRAILER_PREFIX + name, value)
+                headers.add(ConnectProtocolConstants.TRAILER_PREFIX + name, value)
             }
         }
     }

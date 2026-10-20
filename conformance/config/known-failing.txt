@@ -49,7 +49,6 @@ Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Comp
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/server-stream/no-response
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/server-stream/success
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/unary/error
-Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/unary/success
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/half-duplex/error-with-no-responses
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/half-duplex/error-with-responses
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/half-duplex/success
@@ -60,7 +59,6 @@ Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Comp
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/server-stream/no-response
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/server-stream/success
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/unary/error
-Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/unary/success
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/half-duplex/error-with-no-responses
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/half-duplex/error-with-responses
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/half-duplex/success
@@ -71,7 +69,6 @@ Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Com
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/server-stream/no-response
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/server-stream/success
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/unary/error
-Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/unary/success
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/half-duplex/error-with-no-responses
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/half-duplex/error-with-responses
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/half-duplex/success
@@ -82,7 +79,6 @@ Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Com
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/server-stream/no-response
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/server-stream/success
 Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/unary/error
-Duplicate Metadata/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/unary/success
 Errors/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/error-with-metadata
 Errors/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/half-duplex/error-with-no-responses
 Errors/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/half-duplex/error-with-responses
