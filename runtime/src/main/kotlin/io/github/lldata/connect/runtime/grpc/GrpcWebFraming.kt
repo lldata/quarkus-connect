@@ -1,5 +1,6 @@
 package io.github.lldata.connect.runtime.grpc
 
+import io.github.lldata.connect.protocol.ConnectCompression
 import io.github.lldata.connect.spi.ConnectCode
 import io.github.lldata.connect.spi.ConnectException
 import java.io.ByteArrayOutputStream
@@ -7,59 +8,137 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
 /**
- * gRPC-Web unary framing: 5-byte envelopes (flag + big-endian length + payload).
- * Flag `0x00` = data, `0x80` = trailers.
+ * gRPC-Web framing: 5-byte envelopes (flag + big-endian length + payload).
+ * Flag bit0 = compressed; bit7 (`0x80`) = trailers.
  */
 object GrpcWebFraming {
 
     const val FLAG_DATA: Int = 0x00
+    const val FLAG_COMPRESSED: Int = 0x01
     const val FLAG_TRAILER: Int = 0x80
 
-    fun encodeDataFrame(payload: ByteArray): ByteArray = encodeFrame(FLAG_DATA, payload)
+    /** Advertised on `grpc-accept-encoding`. */
+    const val ACCEPT_ENCODING_ADVERTISEMENT = "${ConnectCompression.GZIP}, ${ConnectCompression.IDENTITY}"
 
-    fun encodeTrailerFrame(statusCode: Int, message: String? = null, extra: Map<String, String> = emptyMap()): ByteArray {
+    fun encodeDataFrame(payload: ByteArray, compressed: Boolean = false): ByteArray {
+        val flags = if (compressed) FLAG_COMPRESSED else FLAG_DATA
+        return encodeFrame(flags, payload)
+    }
+
+    fun encodeDataMaybeCompressed(payload: ByteArray, responseEncoding: String?): ByteArray {
+        val encoding = ConnectCompression.normalize(responseEncoding)
+        if (encoding == ConnectCompression.IDENTITY || payload.isEmpty()) {
+            return encodeDataFrame(payload, compressed = false)
+        }
+        return encodeDataFrame(ConnectCompression.compress(encoding, payload), compressed = true)
+    }
+
+    fun encodeTrailerFrame(
+        statusCode: Int,
+        message: String? = null,
+        extra: Map<String, List<String>> = emptyMap(),
+    ): ByteArray {
         val sb = StringBuilder()
         sb.append("grpc-status: ").append(statusCode).append("\r\n")
         if (!message.isNullOrEmpty()) {
             sb.append("grpc-message: ").append(percentEncode(message)).append("\r\n")
         }
-        for ((k, v) in extra) {
-            sb.append(k.lowercase()).append(": ").append(v).append("\r\n")
+        for ((k, values) in extra) {
+            val name = k.lowercase()
+            if (name == "grpc-status" || name == "grpc-message") continue
+            for (v in values) {
+                sb.append(name).append(": ").append(v).append("\r\n")
+            }
         }
         return encodeFrame(FLAG_TRAILER, sb.toString().toByteArray(StandardCharsets.UTF_8))
     }
 
-    fun encodeUnarySuccess(message: ByteArray, trailers: Map<String, String> = emptyMap()): ByteArray {
-        val data = encodeDataFrame(message)
+    fun encodeUnarySuccess(
+        message: ByteArray,
+        trailers: Map<String, List<String>> = emptyMap(),
+        responseEncoding: String? = ConnectCompression.IDENTITY,
+    ): ByteArray {
+        val data = encodeDataMaybeCompressed(message, responseEncoding)
         val trailer = encodeTrailerFrame(0, null, trailers)
         return data + trailer
     }
 
-    fun encodeUnaryError(statusCode: Int, message: String?): ByteArray =
-        encodeTrailerFrame(statusCode, message)
+    fun encodeUnaryError(
+        statusCode: Int,
+        message: String?,
+        trailers: Map<String, List<String>> = emptyMap(),
+    ): ByteArray = encodeTrailerFrame(statusCode, message, trailers)
 
     /**
-     * Extract the first data-frame payload from a gRPC-Web request body.
+     * Decode every data frame from a gRPC-Web request body.
+     * Trailer frames in requests are ignored (clients should not send them).
      */
-    fun decodeRequestMessage(body: ByteArray): ByteArray {
-        if (body.isEmpty()) {
-            return ByteArray(0)
+    fun decodeAllDataMessages(
+        body: ByteArray,
+        grpcEncoding: String? = ConnectCompression.IDENTITY,
+    ): List<ByteArray> {
+        if (body.isEmpty()) return emptyList()
+        val out = mutableListOf<ByteArray>()
+        var offset = 0
+        while (offset + 5 <= body.size) {
+            val flag = body[offset].toInt() and 0xff
+            val length = ByteBuffer.wrap(body, offset + 1, 4).int
+            if (length < 0 || offset + 5 + length > body.size) {
+                throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Invalid gRPC-Web frame length: $length")
+            }
+            val payload = body.copyOfRange(offset + 5, offset + 5 + length)
+            offset += 5 + length
+            if (flag and FLAG_TRAILER != 0) {
+                continue
+            }
+            out += decodePayload(flag, payload, grpcEncoding)
         }
-        if (body.size < 5) {
+        if (offset != body.size) {
             throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Truncated gRPC-Web frame")
         }
-        val flag = body[0].toInt() and 0xff
-        if (flag and FLAG_TRAILER != 0) {
-            throw ConnectException(ConnectCode.INVALID_ARGUMENT, "gRPC-Web request must start with a data frame")
+        return out
+    }
+
+    /**
+     * Unary / server-stream request cardinality: exactly one data message
+     * ([ConnectCode.UNIMPLEMENTED] on violation — gRPC cardinality guidance).
+     */
+    fun decodeExactlyOneDataMessage(
+        body: ByteArray,
+        grpcEncoding: String? = ConnectCompression.IDENTITY,
+    ): ByteArray {
+        val all = decodeAllDataMessages(body, grpcEncoding)
+        return when (all.size) {
+            0 -> throw ConnectException(
+                ConnectCode.UNIMPLEMENTED,
+                "unary request has zero messages",
+            )
+            1 -> all[0]
+            else -> throw ConnectException(
+                ConnectCode.UNIMPLEMENTED,
+                "unary request has multiple messages",
+            )
         }
-        if (flag and 0x01 != 0) {
-            throw ConnectException(ConnectCode.UNIMPLEMENTED, "Compressed gRPC-Web frames are not supported")
+    }
+
+    /**
+     * Extract the single data-frame payload from a gRPC-Web unary request body.
+     */
+    fun decodeRequestMessage(
+        body: ByteArray,
+        grpcEncoding: String? = ConnectCompression.IDENTITY,
+    ): ByteArray = decodeExactlyOneDataMessage(body, grpcEncoding)
+
+    private fun decodePayload(flag: Int, payload: ByteArray, grpcEncoding: String?): ByteArray {
+        if (flag and FLAG_COMPRESSED == 0) return payload
+        val encoding = ConnectCompression.normalize(grpcEncoding)
+        if (encoding == ConnectCompression.IDENTITY) {
+            throw ConnectException(
+                ConnectCode.INTERNAL,
+                "protocol error: sent compressed message without compression support",
+            )
         }
-        val length = ByteBuffer.wrap(body, 1, 4).int
-        if (length < 0 || 5 + length > body.size) {
-            throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Invalid gRPC-Web frame length: $length")
-        }
-        return body.copyOfRange(5, 5 + length)
+        return ConnectCompression.decompress(encoding, payload)
     }
 
     private fun encodeFrame(flag: Int, payload: ByteArray): ByteArray {

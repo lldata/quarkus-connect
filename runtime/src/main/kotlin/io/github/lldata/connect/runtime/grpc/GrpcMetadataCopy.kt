@@ -12,7 +12,8 @@ internal object GrpcMetadataCopy {
                 val metaKey = Metadata.Key.of(key, Metadata.BINARY_BYTE_MARSHALLER)
                 val values = headers.getAll(metaKey) ?: continue
                 for (value in values) {
-                    context.responseHeader(key, Base64.getEncoder().encodeToString(value))
+                    // gRPC-Web / Connect wire: binary metadata is unpadded base64.
+                    context.responseHeader(key, Base64.getEncoder().withoutPadding().encodeToString(value))
                 }
             } else {
                 val metaKey = Metadata.Key.of(key, Metadata.ASCII_STRING_MARSHALLER)
@@ -30,7 +31,7 @@ internal object GrpcMetadataCopy {
                 val metaKey = Metadata.Key.of(key, Metadata.BINARY_BYTE_MARSHALLER)
                 val values = trailers.getAll(metaKey) ?: continue
                 for (value in values) {
-                    context.responseTrailer(key, Base64.getEncoder().encodeToString(value))
+                    context.responseTrailer(key, Base64.getEncoder().withoutPadding().encodeToString(value))
                 }
             } else {
                 val metaKey = Metadata.Key.of(key, Metadata.ASCII_STRING_MARSHALLER)
