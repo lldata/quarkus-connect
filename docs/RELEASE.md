@@ -27,13 +27,21 @@ git push origin "v$VERSION"
 A human presses **Publish** on [central.sonatype.com/publishing](https://central.sonatype.com/publishing).
 There is no automatic release to Maven Central.
 
-## Without Central secrets
+## Without Central secrets (GitHub-only story)
 
 You can still:
 
 - Develop and CI against `999-SNAPSHOT`
-- `publishToMavenLocal` for local consumers
-- Ship GitHub source tags later without Portal upload (workflow will fail closed until secrets exist)
+- `publishToMavenLocal` for local consumers (`./gradlew publishToMavenLocal`)
+- Cut a **source** GitHub release without Portal upload:
+  1. Bump `version=` + changelog PR → merge
+  2. Human tags `v$VERSION` (agents never tag)
+  3. `publish.yml` **fails closed** without `SIGNING_*` / `MAVEN_CENTRAL_*` — that is expected
+  4. Create a GitHub Release from the tag in the UI (or `gh release create`) attaching nothing, or
+     attaching locally built jars from `./gradlew :quarkus-connect:assemble :quarkus-connect-deployment:assemble`
+  5. Consumers depend on JitPack / source build / `mavenLocal` until Central secrets exist
+
+There is no agent-driven publish path; fail-closed Central is intentional.
 
 ## Scope gates for a first release
 

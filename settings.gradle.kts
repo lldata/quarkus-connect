@@ -26,6 +26,7 @@ include("runtime")
 include("deployment")
 include("integration-tests")
 include("examples:quarkus-kotlin-server")
+include("conformance")
 
 // Published artifact ids (extension plugin uses project.name for coordinates)
 project(":runtime").name = "quarkus-connect"

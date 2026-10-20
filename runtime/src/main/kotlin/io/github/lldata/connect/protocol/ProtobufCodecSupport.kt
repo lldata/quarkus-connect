@@ -1,8 +1,10 @@
 package io.github.lldata.connect.protocol
 
+import com.google.protobuf.Descriptors
 import com.google.protobuf.InvalidProtocolBufferException
 import com.google.protobuf.Message
 import com.google.protobuf.util.JsonFormat
+import com.google.protobuf.util.JsonFormat.TypeRegistry
 import io.github.lldata.connect.spi.ConnectCodec
 import io.github.lldata.connect.spi.ConnectCode
 import io.github.lldata.connect.spi.ConnectException
@@ -13,10 +15,10 @@ import java.nio.charset.StandardCharsets
  */
 object ProtobufCodecSupport {
 
-    private val jsonParser: JsonFormat.Parser = JsonFormat.parser().ignoringUnknownFields()
+    private val baseJsonParser: JsonFormat.Parser = JsonFormat.parser().ignoringUnknownFields()
     // Always print fields (including defaults) so clients see int64 "0" and bool false —
     // clearer for resume offsets and flags over Connect JSON.
-    private val jsonPrinter: JsonFormat.Printer = JsonFormat.printer()
+    private val baseJsonPrinter: JsonFormat.Printer = JsonFormat.printer()
         .omittingInsignificantWhitespace()
         .includingDefaultValueFields()
 
@@ -38,7 +40,11 @@ object ProtobufCodecSupport {
     fun encode(message: Message, codec: ConnectCodec): ByteArray {
         return when (codec) {
             ConnectCodec.PROTO -> message.toByteArray()
-            ConnectCodec.JSON -> jsonPrinter.print(message).toByteArray(StandardCharsets.UTF_8)
+            // TypeRegistry covers google.protobuf.Any payloads (e.g. conformance RequestInfo).
+            ConnectCodec.JSON ->
+                baseJsonPrinter.usingTypeRegistry(registryFor(message.descriptorForType.file))
+                    .print(message)
+                    .toByteArray(StandardCharsets.UTF_8)
         }
     }
 
@@ -54,7 +60,8 @@ object ProtobufCodecSupport {
         val builder = newBuilder(type)
         val json = String(bytes, StandardCharsets.UTF_8)
         if (json.isNotBlank()) {
-            jsonParser.merge(json, builder)
+            baseJsonParser.usingTypeRegistry(registryFor(builder.descriptorForType.file))
+                .merge(json, builder)
         }
         return builder.build() as T
     }
@@ -62,5 +69,23 @@ object ProtobufCodecSupport {
     private fun <T : Message> newBuilder(type: Class<T>): Message.Builder {
         val method = type.getMethod("newBuilder")
         return method.invoke(null) as Message.Builder
+    }
+
+    /** Register every message in [file] (and dependencies) so JsonFormat can expand Any. */
+    private fun registryFor(file: Descriptors.FileDescriptor): TypeRegistry {
+        val builder = TypeRegistry.newBuilder()
+        val seen = HashSet<String>()
+        fun addFile(f: Descriptors.FileDescriptor) {
+            if (!seen.add(f.fullName)) return
+            fun addMessage(m: Descriptors.Descriptor) {
+                builder.add(m)
+                m.nestedTypes.forEach { addMessage(it) }
+            }
+            f.messageTypes.forEach { addMessage(it) }
+            f.dependencies.forEach { addFile(it) }
+            f.publicDependencies.forEach { addFile(it) }
+        }
+        addFile(file)
+        return builder.build()
     }
 }

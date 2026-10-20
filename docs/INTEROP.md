@@ -6,28 +6,53 @@
 | --- | --- | --- |
 | RestAssured ITs | `:integration-tests` (`GreetConnectTest`) | Unary, GET, gzip, server/client/bidi streams, trailers, timeouts, auth |
 | Curl matrix | `scripts/run-interop-matrix.sh` via `:examples:quarkus-kotlin-server:interopMatrix` (part of `check`) | Live example uber-jar: Echo POST/GET, auth, bad timeout, WatchMessages end-stream, GET 415 |
+| Official conformance (partial) | `scripts/run-conformance.sh` via `:conformance:conformanceSuite` (part of `check`) | Thin `ConformanceService` host + `connectconformance --mode server` |
 
 ```bash
 # Runs as part of ./gradlew check, or alone:
 ./gradlew :examples:quarkus-kotlin-server:interopMatrix
+./gradlew :conformance:conformanceSuite
 
 # Or against a manually started server:
 ./scripts/interop-matrix.sh http://127.0.0.1:8080
 ```
 
-## Official Connect conformance (follow-up)
+## Official Connect conformance (thin host)
 
-The [connectrpc/conformance](https://github.com/connectrpc/conformance) runner expects a
-**ConformanceService** implementation (stdin/stdout process + feature config YAML). That is a
-substantial proto + host surface beyond ordinary `@GrpcService` demos.
+Module `:conformance` implements [ConformanceService](https://github.com/connectrpc/conformance)
+with a ServerCompat stdin/stdout adapter (`ConformanceMain`). The runner binary is taken from
+`PATH`, `~/go/bin`, or downloaded into `.cache/` (v1.0.6).
 
-Tracked follow-ups (not blocked on secrets):
+### Feature matrix (`conformance/config/features.yaml`)
 
-1. Scaffold a `conformance/` module implementing ConformanceService on quarkus-connect
-2. Wire `connectconformance --mode server` in CI (Go install of the runner)
-3. Record known-failing cases (e.g. interactive half-close without full body buffer) until chunked streaming lands
+In scope:
 
-Until then, the curl matrix + ITs are the practical interop gate.
+- HTTP/1.1, Connect only (no gRPC / gRPC-Web / TLS / H2C)
+- Codecs: proto + JSON; compression: identity + gzip
+- Stream types: unary, client, server, half-duplex bidi
+- Connect GET; trailers; half-duplex bidi over HTTP/1.1
+
+Out of config (skipped entirely by the runner):
+
+- TLS / client certs / HTTP/2 / HTTP/3 / H2C
+- gRPC and gRPC-Web protocols
+- Full-duplex bidi
+- Message receive limits
+- Brotli / zstd / deflate / snappy
+
+### Known-failing (`conformance/config/known-failing.txt`)
+
+Exact case names that still fail and **must** keep failing for CI to stay green.
+As of the initial host: **250 pass / 114 known-failing** on the thin matrix.
+
+Typical gaps:
+
+- Streaming response headers/trailers (especially error paths) not always visible on the Connect wire
+- Duplicate metadata / multi-value response header echo
+- Deadline propagation echo (`connect-timeout-ms` not visible to `@GrpcService` after hop-by-hop filter)
+- Some Connect “unexpected request” edge codes (we map content-type to `invalid_argument`, suite expects `unknown`)
+
+Remove entries from `known-failing.txt` when a case starts passing — the runner requires known-failing cases to fail.
 
 ## Streaming cancel / timeout notes
 

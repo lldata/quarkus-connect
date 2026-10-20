@@ -22,7 +22,8 @@ version is tagged.
 - Connect **bidi streaming** for `@GrpcService` `BIDI_STREAMING` methods (buffered vertical slice)
 - Document why Connect message-coding **brotli (`br`)** is deferred (native libs; gzip remains)
 - Curl interop matrix (`scripts/interop-matrix.sh` + Gradle `interopMatrix` in `check`) and streaming cancel/`connect-timeout-ms` hardening
-- `docs/INTEROP.md` — official connect conformance tracked as follow-up
+- Thin `conformance/` ConformanceService host + `connectconformance` suite in `check` (partial matrix; known-failing documented)
+- JSON codec registers protobuf `Any` types from the message file descriptor (needed for conformance payloads)
 
 ### Notes
 - Version remains `999-SNAPSHOT` until a human tags a release (see `docs/RELEASE.md`)
