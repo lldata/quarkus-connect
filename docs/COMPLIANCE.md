@@ -17,7 +17,8 @@ in-repo so external users see the same floor.
 | Server streaming `application/connect+*` | **Yes** | End-stream envelope on completion/error; unsupported stream encoding → end-stream `unimplemented` |
 | Client streaming over Connect | **Yes** | `@GrpcService` `CLIENT_STREAMING`; buffered request body (vertical slice) |
 | Bidi streaming over Connect | **Yes** | `@GrpcService` `BIDI_STREAMING`; buffered request body (vertical slice) |
-| gRPC-Web unary | **Yes** | `+proto` (and `+json` codec path) |
+| gRPC-Web unary + streaming | **Yes** | `+proto` / `+json`; gzip frames; HTTP/1 conformance green |
+| HTTP/2 cleartext (h2c) | **Yes** (Connect) | Conformance `HTTP_VERSION_2` + `supportsH2c`; gRPC-Web×H2 excluded for now |
 | Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false` |
 | Interceptors on Connect | **Yes** | `@GlobalInterceptor` via bridge |
 | Quarkus Connect *client* | **Out of scope** | |
