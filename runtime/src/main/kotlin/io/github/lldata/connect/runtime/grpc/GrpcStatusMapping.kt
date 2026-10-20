@@ -62,6 +62,11 @@ object GrpcStatusMapping {
     fun toConnectException(error: Throwable): ConnectException {
         if (error is ConnectException) return error
 
+        // Opt-in Quarkus Security failures thrown from CDI / identity checks.
+        io.github.lldata.connect.runtime.security.ConnectSecuritySupport
+            .toConnectException(error)
+            ?.let { return it }
+
         val status = when (error) {
             is StatusRuntimeException -> error.status
             is StatusException -> error.status

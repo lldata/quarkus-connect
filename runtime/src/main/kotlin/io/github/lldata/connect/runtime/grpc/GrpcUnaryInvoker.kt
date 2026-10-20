@@ -1,6 +1,7 @@
 package io.github.lldata.connect.runtime.grpc
 
 import com.google.protobuf.Message
+import io.github.lldata.connect.runtime.security.ConnectSecuritySupport
 import io.github.lldata.connect.spi.ConnectCallContext
 import io.github.lldata.connect.spi.ConnectException
 import io.grpc.Context
@@ -32,7 +33,7 @@ object GrpcUnaryInvoker {
         interceptors: List<ServerInterceptor>,
         request: ReqT,
         context: ConnectCallContext,
-    ): RespT {
+    ): RespT = ConnectSecuritySupport.withRequestContext {
         val definition = if (interceptors.isEmpty()) {
             ServerServiceDefinition.builder("connect-bridge")
                 .addMethod(method)
@@ -49,7 +50,7 @@ object GrpcUnaryInvoker {
 
         @Suppress("UNCHECKED_CAST")
         val typed = definition as ServerMethodDefinition<ReqT, RespT>
-        return invokeHandler(typed.methodDescriptor, typed.serverCallHandler, request, context)
+        invokeHandler(typed.methodDescriptor, typed.serverCallHandler, request, context)
     }
 
     private fun <ReqT, RespT> invokeHandler(

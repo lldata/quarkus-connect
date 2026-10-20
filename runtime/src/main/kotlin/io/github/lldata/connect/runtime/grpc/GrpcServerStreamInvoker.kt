@@ -1,6 +1,7 @@
 package io.github.lldata.connect.runtime.grpc
 
 import io.github.lldata.connect.runtime.StreamCallControl
+import io.github.lldata.connect.runtime.security.ConnectSecuritySupport
 import io.github.lldata.connect.spi.ConnectCallContext
 import io.github.lldata.connect.spi.ConnectException
 import io.github.lldata.connect.spi.ConnectStreamObserver
@@ -35,7 +36,7 @@ object GrpcServerStreamInvoker {
         context: ConnectCallContext,
         observer: ConnectStreamObserver<RespT>,
         callControl: StreamCallControl? = null,
-    ) {
+    ) = ConnectSecuritySupport.withRequestContext {
         val definition = if (interceptors.isEmpty()) {
             ServerServiceDefinition.builder("connect-stream-bridge")
                 .addMethod(method)

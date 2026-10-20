@@ -1,5 +1,6 @@
 package io.github.lldata.connect.runtime.grpc
 
+import io.github.lldata.connect.runtime.security.ConnectSecuritySupport
 import io.github.lldata.connect.spi.ConnectCallContext
 import io.github.lldata.connect.spi.ConnectCode
 import io.github.lldata.connect.spi.ConnectException
@@ -32,7 +33,7 @@ object GrpcClientStreamInvoker {
         interceptors: List<ServerInterceptor>,
         requests: List<ReqT>,
         context: ConnectCallContext,
-    ): RespT {
+    ): RespT = ConnectSecuritySupport.withRequestContext {
         val definition = if (interceptors.isEmpty()) {
             ServerServiceDefinition.builder("connect-client-stream-bridge")
                 .addMethod(method)
@@ -49,7 +50,7 @@ object GrpcClientStreamInvoker {
 
         @Suppress("UNCHECKED_CAST")
         val typed = definition as ServerMethodDefinition<ReqT, RespT>
-        return invokeHandler(typed.methodDescriptor, typed.serverCallHandler, requests, context)
+        invokeHandler(typed.methodDescriptor, typed.serverCallHandler, requests, context)
     }
 
     private fun <ReqT, RespT> invokeHandler(

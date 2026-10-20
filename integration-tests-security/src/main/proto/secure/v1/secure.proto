@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package secure.v1;
+
+option java_multiple_files = true;
+option java_package = "io.github.lldata.connect.it.secure.v1";
+option java_outer_classname = "SecureProto";
+
+service SecureService {
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
+  rpc AdminOnly(WhoAmIRequest) returns (WhoAmIResponse);
+}
+
+message WhoAmIRequest {}
+
+message WhoAmIResponse {
+  string subject = 1;
+}
