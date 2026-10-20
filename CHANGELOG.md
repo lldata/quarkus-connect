@@ -15,6 +15,7 @@ version is tagged.
 - Agent tend/issue/review/claude house-style workflows (skip until Claude token/app exist)
 - Unary GET `connect=v1` / `base64=1` / `Vary: Accept-Encoding`; Java `ConnectUnaryMethod` SPI example
 - Clear `unimplemented` for client/bidi streaming RPCs hit over Connect
+- `docs/COMPLIANCE.md` matrix; GET unknown `encoding` → HTTP 415; advertise `Accept-Encoding: identity`
 
 ### Notes
 - Version remains `999-SNAPSHOT` until a human tags a release (see `docs/RELEASE.md`)

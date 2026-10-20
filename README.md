@@ -60,8 +60,9 @@ curl -sS 'http://localhost:8080/demo.v1.DemoService/Echo?connect=v1&encoding=jso
   -H 'Authorization: Bearer demo-user'
 ```
 
-See **`examples/quarkus-kotlin-server`**, **`examples/flutter-web-client`**, [docs/SPI.md](docs/SPI.md),
-and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+See **`examples/quarkus-kotlin-server`**, **`examples/flutter-web-client`**,
+[docs/SPI.md](docs/SPI.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and
+[docs/COMPLIANCE.md](docs/COMPLIANCE.md).
 
 ## Content types
 
