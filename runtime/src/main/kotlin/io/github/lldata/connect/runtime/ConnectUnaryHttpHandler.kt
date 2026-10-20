@@ -8,6 +8,7 @@ import io.github.lldata.connect.protocol.ConnectProtocolConstants
 import io.github.lldata.connect.protocol.ProtobufCodecSupport
 import io.github.lldata.connect.runtime.grpc.GrpcStatusMapping
 import io.github.lldata.connect.runtime.grpc.GrpcWebFraming
+import io.github.lldata.connect.runtime.security.ConnectSecuritySupport
 import io.github.lldata.connect.spi.ConnectCodec
 import io.github.lldata.connect.spi.ConnectCode
 import io.github.lldata.connect.spi.ConnectException
@@ -29,6 +30,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * on the Quarkus HTTP port.
  *
  * Native `application/grpc` is left to quarkus-grpc (`use-separate-server=false`).
+ *
+ * When the app enables Quarkus Security, [ConnectSecuritySupport] propagates
+ * `SecurityIdentity` so `@RolesAllowed` / `@Authenticated` on `@GrpcService` apply
+ * to Connect and gRPC-Web the same way as native gRPC.
  */
 class ConnectUnaryHttpHandler(
     private val registry: ConnectMethodRegistry,
@@ -37,6 +42,9 @@ class ConnectUnaryHttpHandler(
     private val log = Logger.getLogger(ConnectUnaryHttpHandler::class.java)
 
     override fun handle(ctx: RoutingContext) {
+        // Opt-in: no-op when Security is absent; required when HTTP auth established identity.
+        ConnectSecuritySupport.propagateIdentity(ctx)
+
         val request = ctx.request()
         val contentType = request.getHeader(HttpHeaders.CONTENT_TYPE)
         val wire = detectWireProtocol(contentType, request.method())

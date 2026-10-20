@@ -25,6 +25,7 @@ rootProject.name = "quarkus-connect-parent"
 include("runtime")
 include("deployment")
 include("integration-tests")
+include("integration-tests-security")
 include("examples:quarkus-kotlin-server")
 include("conformance")
 

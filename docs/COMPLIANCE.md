@@ -21,6 +21,7 @@ in-repo so external users see the same floor.
 | HTTP/2 cleartext (h2c) | **Yes** | Connect + gRPC-Web + native gRPC (proto) in conformance |
 | Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false`; conformance `PROTOCOL_GRPC` (proto; JSON excluded). Error-detail trailers still padded by Vert.x `Utils.writeMetadata` (known-flaky) |
 | Interceptors on Connect | **Yes** | `@GlobalInterceptor` via bridge |
+| Quarkus Security on Connect | **Opt-in** | App adds `quarkus-security` + mechanism; identity propagation + `@RolesAllowed` / `@Authenticated` on Connect/gRPC-Web (`:integration-tests-security`) |
 | Quarkus Connect *client* | **Out of scope** | |
 
 ## Examples proof (summary)

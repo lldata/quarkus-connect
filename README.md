@@ -18,6 +18,7 @@ Kotlin-first runtime with a Java-friendly SPI ([docs/SPI.md](docs/SPI.md)).
 | `@GrpcService` → gRPC-Web unary | Yes |
 | Native gRPC on same HTTP port | Yes (`quarkus.grpc.server.use-separate-server=false`) |
 | Global / method `ServerInterceptor`s on Connect | Yes |
+| Quarkus Security (`SecurityIdentity`, `@RolesAllowed`) | **Opt-in** — add `quarkus-security` (+ mechanism); no hard dep on Connect core |
 | Server streaming (`application/connect+*`) | Yes — `@GrpcService` `SERVER_STREAMING` methods |
 | Client streaming (`application/connect+*`) | Yes — `@GrpcService` `CLIENT_STREAMING` methods |
 | Bidi streaming (`application/connect+*`) | Yes — `@GrpcService` `BIDI_STREAMING` methods |

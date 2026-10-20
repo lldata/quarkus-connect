@@ -18,6 +18,7 @@ updates:
       - "/runtime"
       - "/deployment"
       - "/integration-tests"
+      - "/integration-tests-security"
     schedule:
       interval: weekly
     groups:
