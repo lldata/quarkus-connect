@@ -17,9 +17,9 @@ in-repo so external users see the same floor.
 | Server streaming `application/connect+*` | **Yes** | End-stream envelope on completion/error; unsupported stream encoding → end-stream `unimplemented` |
 | Client streaming over Connect | **Yes** | `@GrpcService` `CLIENT_STREAMING`; buffered request body (vertical slice) |
 | Bidi streaming over Connect | **Yes** | `@GrpcService` `BIDI_STREAMING`; buffered request body (vertical slice) |
-| gRPC-Web unary + streaming | **Yes** | `+proto` / `+json`; gzip frames; HTTP/1 conformance green |
-| HTTP/2 cleartext (h2c) | **Yes** (Connect) | Conformance `HTTP_VERSION_2` + `supportsH2c`; gRPC-Web×H2 excluded for now |
-| Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false` |
+| gRPC-Web unary + streaming | **Yes** | `+proto` / `+json`; gzip frames; H1 + H2 h2c conformance green |
+| HTTP/2 cleartext (h2c) | **Yes** | Connect + gRPC-Web + native gRPC (proto) in conformance |
+| Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false`; conformance `PROTOCOL_GRPC` (proto; JSON excluded). Error-detail trailers still padded by Vert.x `Utils.writeMetadata` (known-failing) |
 | Interceptors on Connect | **Yes** | `@GlobalInterceptor` via bridge |
 | Quarkus Connect *client* | **Out of scope** | |
 
@@ -40,8 +40,9 @@ in-repo so external users see the same floor.
 - **Brotli (`br`) / zstd** — deferred: JDK has no brotli API; portable codecs need native libs
   (e.g. brotli4j + platform classifiers), which is a poor fit for a Central-published extension.
   Prefer edge/Quarkus HTTP `br` for whole responses; Connect message coding stays `gzip` + `identity`.
-- Full [connectrpc/conformance](https://github.com/connectrpc/conformance) matrix (TLS, gRPC, H2, …) —
-  thin host + partial suite runs in CI today (see [INTEROP.md](INTEROP.md)); curl matrix + ITs remain
-
-- Maven Central secrets + first tagged release (`docs/RELEASE.md`)
+- Full [connectrpc/conformance](https://github.com/connectrpc/conformance) matrix (TLS, HTTP/3,
+  gRPC×JSON, full-duplex, message limits) — thin host + partial suite in CI (see [INTEROP.md](INTEROP.md))
+- Unpadded `grpc-status-details-bin` on the **native** gRPC path (Vert.x pads Base64; Connect /
+  gRPC-Web paths already emit unpadded)
+- Maven Central secrets (`docs/RELEASE.md` Path B)
 - Server-side ffmpeg thumbnails
