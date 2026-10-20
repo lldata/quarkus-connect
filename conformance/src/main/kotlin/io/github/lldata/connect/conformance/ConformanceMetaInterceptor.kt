@@ -45,13 +45,25 @@ class ConformanceMetaInterceptor : ServerInterceptor {
 
         val forwarding =
             object : ForwardingServerCall.SimpleForwardingServerCall<ReqT, RespT>(call) {
+                @Volatile
+                private var headersSent = false
+
                 override fun sendHeaders(responseHeaders: Metadata) {
                     pending.headers?.let { responseHeaders.merge(it) }
+                    headersSent = true
                     super.sendHeaders(responseHeaders)
                 }
 
                 override fun close(status: Status, trailers: Metadata) {
                     pending.trailers?.let { trailers.merge(it) }
+                    // Error / empty-stream paths often close without sendHeaders; flush pending
+                    // response headers so the Connect bridge can mirror them on the HTTP response.
+                    if (!headersSent) {
+                        val hdrs = Metadata()
+                        pending.headers?.let { hdrs.merge(it) }
+                        headersSent = true
+                        super.sendHeaders(hdrs)
+                    }
                     super.close(status, trailers)
                 }
             }

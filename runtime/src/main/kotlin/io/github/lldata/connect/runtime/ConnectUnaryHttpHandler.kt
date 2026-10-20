@@ -195,6 +195,7 @@ class ConnectUnaryHttpHandler(
         response.setChunked(true)
 
         val finished = AtomicBoolean(false)
+        val headersFlushed = AtomicBoolean(false)
         fun markClientGone() {
             clientGone.set(true)
             callControl.cancelFromClient()
@@ -204,9 +205,16 @@ class ConnectUnaryHttpHandler(
 
         var timeoutTimerId = -1L
 
+        fun flushLeadingHeaders() {
+            if (!headersFlushed.compareAndSet(false, true)) return
+            if (response.headWritten()) return
+            writeStreamResponseHeaders(response, callContext)
+        }
+
         fun writeEnvelope(bytes: ByteArray) {
             ctx.vertx().runOnContext {
                 if (!response.ended() && !clientGone.get()) {
+                    flushLeadingHeaders()
                     response.write(io.vertx.core.buffer.Buffer.buffer(bytes))
                 }
             }
@@ -222,6 +230,7 @@ class ConnectUnaryHttpHandler(
             val end = ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers())
             ctx.vertx().runOnContext {
                 if (!response.ended()) {
+                    flushLeadingHeaders()
                     response.end(io.vertx.core.buffer.Buffer.buffer(end))
                 }
             }
@@ -338,6 +347,7 @@ class ConnectUnaryHttpHandler(
             if (responseEncoding != ConnectCompression.IDENTITY) {
                 response.putHeader(ConnectProtocolConstants.STREAMING_CONTENT_ENCODING_HEADER, responseEncoding)
             }
+            writeStreamResponseHeaders(response, callContext)
             if (ar.succeeded()) {
                 val data = ConnectEnvelope.encodeDataMaybeCompressed(ar.result(), responseEncoding)
                 val end = ConnectEnvelope.encodeEndStream(null, callContext.snapshotTrailers())
@@ -416,6 +426,7 @@ class ConnectUnaryHttpHandler(
         response.setChunked(true)
 
         val finished = AtomicBoolean(false)
+        val headersFlushed = AtomicBoolean(false)
         fun markClientGone() {
             clientGone.set(true)
             callControl.cancelFromClient()
@@ -425,9 +436,16 @@ class ConnectUnaryHttpHandler(
 
         var timeoutTimerId = -1L
 
+        fun flushLeadingHeaders() {
+            if (!headersFlushed.compareAndSet(false, true)) return
+            if (response.headWritten()) return
+            writeStreamResponseHeaders(response, callContext)
+        }
+
         fun writeEnvelope(bytes: ByteArray) {
             ctx.vertx().runOnContext {
                 if (!response.ended() && !clientGone.get()) {
+                    flushLeadingHeaders()
                     response.write(io.vertx.core.buffer.Buffer.buffer(bytes))
                 }
             }
@@ -442,6 +460,7 @@ class ConnectUnaryHttpHandler(
             val end = ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers())
             ctx.vertx().runOnContext {
                 if (!response.ended()) {
+                    flushLeadingHeaders()
                     response.end(io.vertx.core.buffer.Buffer.buffer(end))
                 }
             }
@@ -853,6 +872,19 @@ class ConnectUnaryHttpHandler(
         for ((name, values) in callContext.snapshotTrailers()) {
             for (value in values) {
                 headers.add(ConnectProtocolConstants.TRAILER_PREFIX + name, value)
+            }
+        }
+    }
+
+    /** Connect streaming leading metadata (HTTP response headers). Trailers go in end-stream JSON. */
+    private fun writeStreamResponseHeaders(
+        response: io.vertx.core.http.HttpServerResponse,
+        callContext: DefaultConnectCallContext,
+    ) {
+        val headers = response.headers()
+        for ((name, values) in callContext.snapshotHeaders()) {
+            for (value in values) {
+                headers.add(name, value)
             }
         }
     }
