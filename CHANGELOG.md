@@ -14,6 +14,9 @@ version is tagged.
 ### Fixed
 - Preserve multi-value gRPC response headers/trailers through the Connect bridge (`Metadata.getAll` + Vert.x `headers().add`)
 - Forward `connect-timeout-ms` into gRPC metadata so handlers can echo client deadlines (Deadline Propagation conformance)
+- Flush Connect stream/error response headers (pending `sendHeaders` on close; leading metadata before first envelope)
+- Align unexpected-request HTTP/status mapping with connect-go (405/415 empty bodies, stream cardinality, compressed+identity)
+- Thin `connectconformance` matrix **364/364** (no known-failing entries)
 
 ## [0.1.0] - 2026-10-20
 

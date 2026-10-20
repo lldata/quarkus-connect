@@ -128,6 +128,7 @@ class GreetConnectTest {
 
     @Test
     fun `unsupported content type returns 415`() {
+        // Empty body: clients map HTTP 415 → Connect unknown (connect-go parity).
         given()
             .header("Content-Type", "text/plain")
             .header("connect-protocol-version", "1")
@@ -137,8 +138,8 @@ class GreetConnectTest {
             .post("/greet.v1.GreetService/Greet")
             .then()
             .statusCode(415)
-            .header("Content-Type", equalTo("application/json"))
-            .body("code", equalTo("invalid_argument"))
+            .header("Accept-Post", equalTo("application/json, application/proto"))
+            .body(equalTo(""))
     }
 
     @Test
