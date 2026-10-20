@@ -26,7 +26,7 @@ Build: JDK **21** toolchain, library bytecode **JVM 17**. `./gradlew check`.
 | --- | --- | --- |
 | Connect unary | `application/json` / `application/proto` | quarkus-connect |
 | Connect server / client / bidi streaming | `application/connect+json` / `+proto` | quarkus-connect |
-| gRPC-Web unary | `application/grpc-web+proto` | quarkus-connect |
+| gRPC-Web unary / streaming | `application/grpc-web+proto` (etc.) | quarkus-connect (route order before quarkus-grpc on h2) |
 | Native gRPC | `application/grpc` | quarkus-grpc (`use-separate-server=false`) |
 
 ## Unary wire (Connect)
