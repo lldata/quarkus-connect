@@ -8,6 +8,12 @@ version is tagged.
 
 ## [Unreleased]
 
+### Changed
+- Development continues on `0.1.1-SNAPSHOT` after the `0.1.0` GitHub release
+
+### Fixed
+- Preserve multi-value gRPC response headers/trailers through the Connect bridge (`Metadata.getAll` + Vert.x `headers().add`)
+
 ## [0.1.0] - 2026-10-20
 
 First public GitHub release (no Maven Central — secrets not configured; see `docs/RELEASE.md` Path A).
@@ -31,4 +37,5 @@ First public GitHub release (no Maven Central — secrets not configured; see `d
 - GitHub-only release packaging script (`scripts/package-github-release.sh`)
 
 [Unreleased]: https://github.com/lldata/quarkus-connect/compare/v0.1.0...HEAD
+[0.1.1-SNAPSHOT]: https://github.com/lldata/quarkus-connect/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.0

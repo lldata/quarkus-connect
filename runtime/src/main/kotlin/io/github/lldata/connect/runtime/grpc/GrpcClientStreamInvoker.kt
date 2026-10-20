@@ -73,12 +73,7 @@ object GrpcClientStreamInvoker {
                 override fun request(numMessages: Int) = Unit
 
                 override fun sendHeaders(headers: Metadata) {
-                    for (key in headers.keys()) {
-                        if (key.endsWith(Metadata.BINARY_HEADER_SUFFIX)) continue
-                        val metaKey = Metadata.Key.of(key, Metadata.ASCII_STRING_MARSHALLER)
-                        val value = headers.get(metaKey) ?: continue
-                        context.responseHeader(key, value)
-                    }
+                    GrpcMetadataCopy.headersToContext(headers, context)
                 }
 
                 override fun sendMessage(message: RespT) {
@@ -88,12 +83,7 @@ object GrpcClientStreamInvoker {
                 override fun close(status: Status, trailers: Metadata) {
                     if (closed) return
                     closed = true
-                    for (key in trailers.keys()) {
-                        if (key.endsWith(Metadata.BINARY_HEADER_SUFFIX)) continue
-                        val metaKey = Metadata.Key.of(key, Metadata.ASCII_STRING_MARSHALLER)
-                        val value = trailers.get(metaKey) ?: continue
-                        context.responseTrailer(key, value)
-                    }
+                    GrpcMetadataCopy.trailersToContext(trailers, context)
                     if (!status.isOk) {
                         errorRef.set(status.asRuntimeException(trailers))
                     }
