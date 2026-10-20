@@ -27,6 +27,7 @@ abstract class MediaServiceBase extends $pb.GeneratedService {
   $async.Future<$1.CompleteUploadResponse> completeUpload($pb.ServerContext ctx, $1.CompleteUploadRequest request);
   $async.Future<$1.GetMessageResponse> getMessage($pb.ServerContext ctx, $1.GetMessageRequest request);
   $async.Future<$1.ListMessagesResponse> listMessages($pb.ServerContext ctx, $1.ListMessagesRequest request);
+  $async.Future<$1.Message> watchMessages($pb.ServerContext ctx, $1.WatchMessagesRequest request);
 
   $pb.GeneratedMessage createRequest($core.String methodName) {
     switch (methodName) {
@@ -36,6 +37,7 @@ abstract class MediaServiceBase extends $pb.GeneratedService {
       case 'CompleteUpload': return $1.CompleteUploadRequest();
       case 'GetMessage': return $1.GetMessageRequest();
       case 'ListMessages': return $1.ListMessagesRequest();
+      case 'WatchMessages': return $1.WatchMessagesRequest();
       default: throw $core.ArgumentError('Unknown method: $methodName');
     }
   }
@@ -48,6 +50,7 @@ abstract class MediaServiceBase extends $pb.GeneratedService {
       case 'CompleteUpload': return this.completeUpload(ctx, request as $1.CompleteUploadRequest);
       case 'GetMessage': return this.getMessage(ctx, request as $1.GetMessageRequest);
       case 'ListMessages': return this.listMessages(ctx, request as $1.ListMessagesRequest);
+      case 'WatchMessages': return this.watchMessages(ctx, request as $1.WatchMessagesRequest);
       default: throw $core.ArgumentError('Unknown method: $methodName');
     }
   }

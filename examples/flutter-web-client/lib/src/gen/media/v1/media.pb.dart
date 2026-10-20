@@ -902,6 +902,71 @@ class ListMessagesResponse extends $pb.GeneratedMessage {
   void clearLatestSequence() => clearField(2);
 }
 
+class WatchMessagesRequest extends $pb.GeneratedMessage {
+  factory WatchMessagesRequest({
+    $fixnum.Int64? afterSequence,
+    $core.int? limit,
+  }) {
+    final $result = create();
+    if (afterSequence != null) {
+      $result.afterSequence = afterSequence;
+    }
+    if (limit != null) {
+      $result.limit = limit;
+    }
+    return $result;
+  }
+  WatchMessagesRequest._() : super();
+  factory WatchMessagesRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory WatchMessagesRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'WatchMessagesRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'media.v1'), createEmptyInstance: create)
+    ..aInt64(1, _omitFieldNames ? '' : 'afterSequence')
+    ..a<$core.int>(2, _omitFieldNames ? '' : 'limit', $pb.PbFieldType.O3)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  WatchMessagesRequest clone() => WatchMessagesRequest()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  WatchMessagesRequest copyWith(void Function(WatchMessagesRequest) updates) => super.copyWith((message) => updates(message as WatchMessagesRequest)) as WatchMessagesRequest;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static WatchMessagesRequest create() => WatchMessagesRequest._();
+  WatchMessagesRequest createEmptyInstance() => create();
+  static $pb.PbList<WatchMessagesRequest> createRepeated() => $pb.PbList<WatchMessagesRequest>();
+  @$core.pragma('dart2js:noInline')
+  static WatchMessagesRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<WatchMessagesRequest>(create);
+  static WatchMessagesRequest? _defaultInstance;
+
+  /// Stream messages with sequence > after_sequence (0 = from start).
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get afterSequence => $_getI64(0);
+  @$pb.TagNumber(1)
+  set afterSequence($fixnum.Int64 v) { $_setInt64(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasAfterSequence() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearAfterSequence() => clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get limit => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set limit($core.int v) { $_setSignedInt32(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasLimit() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearLimit() => clearField(2);
+}
+
 class Message extends $pb.GeneratedMessage {
   factory Message({
     $core.String? messageId,
@@ -1114,6 +1179,9 @@ class MediaServiceApi {
   ;
   $async.Future<ListMessagesResponse> listMessages($pb.ClientContext? ctx, ListMessagesRequest request) =>
     _client.invoke<ListMessagesResponse>(ctx, 'MediaService', 'ListMessages', request, ListMessagesResponse())
+  ;
+  $async.Future<Message> watchMessages($pb.ClientContext? ctx, WatchMessagesRequest request) =>
+    _client.invoke<Message>(ctx, 'MediaService', 'WatchMessages', request, Message())
   ;
 }
 
