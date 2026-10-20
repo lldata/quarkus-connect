@@ -1,9 +1,7 @@
 name: Publish
 
-# Tag-driven Central Portal upload (draft GitHub release). Secrets are not wired yet on
-# this greenfield repo — this workflow documents the house-style gate and will fail closed
-# until SIGNING_* / MAVEN_CENTRAL_* repository secrets exist and Maven publishing is
-# configured in Gradle (see AGENTS.md gaps).
+# Tag-driven Central Portal upload + draft GitHub release.
+# Fail-closed without SIGNING_* / MAVEN_CENTRAL_* secrets (house style).
 
 on:
   push:
@@ -13,6 +11,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
 
+    # Only the canonical repository holds the publishing secrets.
     if: github.repository == 'lldata/quarkus-connect'
 
     permissions:
@@ -28,6 +27,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # Signing turns itself on when a key is present, so a missing secret would otherwise upload
+      # an unsigned bundle and be rejected minutes later by the Portal.
       - name: Require the publishing secrets
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
@@ -61,8 +62,62 @@ jobs:
       - name: Build
         run: ./gradlew check --no-daemon
 
-      - name: Publish placeholder
+      # Uploads a bundle to the Central Portal; it does NOT release to Maven Central.
+      # Credentials as env vars — never `-P` flags (process table / echoed Run line).
+      - name: Publish to the Central Portal
+        env:
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
         run: |
-          echo "::error::Maven Central publishing plugin is not wired in Gradle yet (bootstrap gap)."
-          echo "Add com.vanniktech.maven.publish (or equivalent) before enabling tag publishes."
-          exit 1
+          set -o pipefail
+          ./gradlew publishToMavenCentral | tee publish.log
+
+      - name: Report the deployment status
+        env:
+          USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+        run: |
+          id=$(sed -n 's/.*deployment id: \([0-9a-f-]*\).*/\1/p' publish.log | head -1)
+          if [ -z "$id" ]; then
+            echo "::error::The publish step reported no deployment id."
+            exit 1
+          fi
+
+          token=$(printf '%s:%s' "$USERNAME" "$PASSWORD" | base64 -w0)
+          echo "::add-mask::$token"
+
+          state_of='import json,sys; print(json.load(sys.stdin).get("deploymentState",""))'
+          errors_of='import json,sys; d=json.load(sys.stdin); e=d.get("errors") or d.get("deploymentErrors"); print(json.dumps(e or d, indent=2))'
+
+          for _ in $(seq 1 20); do
+            body=$(curl -sS -X POST -H "Authorization: Bearer $token" \
+              "https://central.sonatype.com/api/v1/publisher/status?id=$id")
+            state=$(printf '%s' "$body" | python3 -c "$state_of")
+            echo "deployment $id: ${state:-unknown}"
+            case "$state" in
+              VALIDATED|PUBLISHED)
+                echo "::notice::Deployment $state — publish it at https://central.sonatype.com/publishing"
+                exit 0
+                ;;
+              FAILED)
+                echo "::error::Deployment failed validation. The Portal gave this reason:"
+                printf '%s' "$body" | python3 -c "$errors_of"
+                exit 1
+                ;;
+            esac
+            sleep 15
+          done
+
+          echo "::warning::Still ${state:-unknown} after five minutes; check the Portal."
+
+      - name: Draft the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          --draft
+          --title "${{ steps.version.outputs.version }}"
+          runtime/build/libs/*.jar
+          deployment/build/libs/*.jar
