@@ -28,7 +28,7 @@ with a ServerCompat stdin/stdout adapter (`ConformanceMain`). The runner binary 
 In scope:
 
 - HTTP/1.1 + **HTTP/2 cleartext (h2c)**
-- **Connect** on H1 and H2; **gRPC-Web** on H1 (gRPC-Web×H2 excluded — see below)
+- **Connect** and **gRPC-Web** on H1 and H2
 - Codecs: proto + JSON; compression: identity + gzip (including gRPC-Web compressed frames)
 - Stream types: unary, client, server, half-duplex bidi
 - Connect GET; trailers; half-duplex bidi over HTTP/1.1
@@ -37,15 +37,18 @@ Out of config / excluded:
 
 - TLS / client certs / HTTP/3
 - Native gRPC (`PROTOCOL_GRPC`)
-- gRPC-Web over HTTP/2 (`exclude_cases` — shared Vert.x + quarkus-grpc h2c interaction)
 - Full-duplex bidi
 - Message receive limits
 - Brotli / zstd / deflate / snappy
 
+gRPC-Web on h2c is claimed by quarkus-connect at a route order before quarkus-grpc.
+quarkus-grpc's `isGrpc` matches `^application/grpc.*` on HTTP/2, which would otherwise
+steal `application/grpc-web*` and answer with native `application/grpc`.
+
 ### Known-failing (`conformance/config/known-failing.txt`)
 
 Exact case names that still fail and **must** keep failing for CI to stay green.
-As of HTTP/2 h2c enablement: **1018 pass / 0 known-failing**.
+As of gRPC-Web×HTTP/2 enablement: see CI / `:conformance:conformanceSuite` summary.
 
 Remove entries from `known-failing.txt` when a case starts passing — the runner requires known-failing cases to fail.
 

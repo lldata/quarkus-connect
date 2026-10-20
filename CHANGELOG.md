@@ -8,6 +8,11 @@ version is tagged.
 
 ## [Unreleased]
 
+### Fixed
+- Claim gRPC-Web before quarkus-grpc on the shared HTTP port so `application/grpc-web*` is not
+  stolen by `isGrpc` (`^application/grpc.*`) on HTTP/2 (GOAWAY / `application/grpc` content-type)
+- Enable **gRPC-Web over HTTP/2 h2c** in the conformance matrix (drop `exclude_cases`)
+
 ### Changed
 - Development continues on `0.1.3-SNAPSHOT` after the `0.1.2` GitHub release
 

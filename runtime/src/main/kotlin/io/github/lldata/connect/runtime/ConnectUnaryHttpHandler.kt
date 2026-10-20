@@ -123,7 +123,13 @@ class ConnectUnaryHttpHandler(
                 writeGrpcWebError(ctx, unimplementedStreaming(procedure, unsupported), contentType)
                 return
             }
-            ctx.next()
+            // Do not fall through to quarkus-grpc: on HTTP/2 its isGrpc gate matches
+            // application/grpc-web* and answers with application/grpc (wrong wire).
+            writeGrpcWebError(
+                ctx,
+                ConnectException.unimplemented("Procedure not found: /$procedure"),
+                contentType,
+            )
             return
         }
 

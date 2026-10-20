@@ -1,6 +1,5 @@
 # Feature matrix for quarkus-connect ConformanceService host.
-# Skips TLS, message-receive limits, native gRPC, full-duplex bidi (buffered path),
-# and gRPC-Web over HTTP/2 (see exclude_cases).
+# Skips TLS, message-receive limits, native gRPC, and full-duplex bidi (buffered path).
 # See docs/INTEROP.md for the skip rationale and known-failing patterns.
 features:
   versions:
@@ -27,10 +26,3 @@ features:
   supportsHalfDuplexBidiOverHttp1: true
   supportsConnectGet: true
   supportsMessageReceiveLimit: false
-
-# gRPC-Web over h2c currently fails against the shared Vert.x + quarkus-grpc port
-# (HTTP/2 GOAWAY PROTOCOL_ERROR / response Content-Type application/grpc).
-# Connect over h2c is green; keep gRPC-Web on HTTP/1 until that interaction is fixed.
-exclude_cases:
-  - version: HTTP_VERSION_2
-    protocol: PROTOCOL_GRPC_WEB
