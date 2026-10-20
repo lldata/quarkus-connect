@@ -10,7 +10,7 @@ pluginManagement {
         id("io.quarkus.extension") version quarkusVersion
         id("org.jetbrains.kotlin.jvm") version kotlinVersion
         id("org.jetbrains.kotlin.plugin.allopen") version kotlinVersion
-        id("com.google.protobuf") version "0.9.4"
+        id("com.google.protobuf") version "0.10.0"
     }
 }
 
