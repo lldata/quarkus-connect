@@ -43,14 +43,11 @@ Out of config (skipped entirely by the runner):
 ### Known-failing (`conformance/config/known-failing.txt`)
 
 Exact case names that still fail and **must** keep failing for CI to stay green.
-As of the initial host: **250 pass / 114 known-failing** on the thin matrix.
+As of stream/error header flush: **358 pass / 6 known-failing** on the thin matrix.
 
-Typical gaps:
+Remaining gaps:
 
-- Streaming response headers/trailers (especially error paths) not always visible on the Connect wire
-- Duplicate metadata / multi-value response header echo
-- Deadline propagation echo (`connect-timeout-ms` not visible to `@GrpcService` after hop-by-hop filter)
-- Some Connect “unexpected request” edge codes (we map content-type to `invalid_argument`, suite expects `unknown`)
+- Connect “unexpected request” edge codes (content-type / verb / empty stream → we map to `invalid_argument` / `unimplemented`; suite often expects `unknown` or different codes)
 
 Remove entries from `known-failing.txt` when a case starts passing — the runner requires known-failing cases to fail.
 
