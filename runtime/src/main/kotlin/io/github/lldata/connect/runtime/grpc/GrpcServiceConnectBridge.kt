@@ -1,5 +1,6 @@
 package io.github.lldata.connect.runtime.grpc
 
+import io.github.lldata.connect.spi.ConnectBidiStreamMethod
 import io.github.lldata.connect.spi.ConnectClientStreamMethod
 import io.github.lldata.connect.spi.ConnectServerStreamMethod
 import io.github.lldata.connect.spi.ConnectUnaryMethod
@@ -15,7 +16,7 @@ import org.jboss.logging.Logger
 
 /**
  * Discovers Quarkus `@GrpcService` [BindableService] beans and `@GlobalInterceptor`s,
- * exposing unary, server-streaming, and client-streaming RPCs as Connect.
+ * exposing unary and all streaming RPCs as Connect.
  */
 @ApplicationScoped
 class GrpcServiceConnectBridge {
@@ -106,26 +107,31 @@ class GrpcServiceConnectBridge {
         return methods
     }
 
-    /**
-     * `@GrpcService` procedures that exist but are not bridged to Connect yet (bidi).
-     * Used so Connect requests get a clear `unimplemented` instead of a blank 404.
-     */
-    fun unsupportedConnectProcedures(): Map<String, String> {
-        if (grpcServices.isUnsatisfied) return emptyMap()
-        val out = linkedMapOf<String, String>()
+    fun bridgedBidiStreamMethods(): List<ConnectBidiStreamMethod<*, *>> {
+        val interceptors = globalInterceptors.toList()
+        val methods = mutableListOf<ConnectBidiStreamMethod<*, *>>()
+
+        if (grpcServices.isUnsatisfied) {
+            return methods
+        }
+
         for (service in grpcServices) {
-            for (method in service.bindService().methods) {
-                val type = method.methodDescriptor.type
-                if (type == MethodDescriptor.MethodType.BIDI_STREAMING) {
-                    out[method.methodDescriptor.fullMethodName] = type.name
-                    log.infof(
-                        "Connect does not bridge %s (%s) yet — requests will return unimplemented",
-                        method.methodDescriptor.fullMethodName,
-                        type,
-                    )
+            val definition = service.bindService()
+            for (method in definition.methods) {
+                if (method.methodDescriptor.type != MethodDescriptor.MethodType.BIDI_STREAMING) {
+                    continue
                 }
+                methods += GrpcBridgedBidiStreamMethod.from(method, interceptors)
+                log.infof(
+                    "Bridged @GrpcService bidi-stream method /%s → Connect streaming (%d global interceptor(s))",
+                    method.methodDescriptor.fullMethodName,
+                    interceptors.size,
+                )
             }
         }
-        return out
+        return methods
     }
+
+    /** Reserved for method types not yet bridged to Connect (currently none). */
+    fun unsupportedConnectProcedures(): Map<String, String> = emptyMap()
 }

@@ -18,14 +18,14 @@ Build: JDK **21** toolchain, library bytecode **JVM 17**. `./gradlew check`.
    [SPI.md](SPI.md).
 2. **Protocol** — unary encode/decode, Connect envelopes, error JSON, header constants.
 3. **Runtime** — CDI registry + Vert.x handler (Connect unary / Connect streaming / gRPC-Web).
-4. **gRPC bridge** — discovers `@GrpcService` + `@GlobalInterceptor`s; unary, server-streaming, client-streaming.
+4. **gRPC bridge** — discovers `@GrpcService` + `@GlobalInterceptor`s; unary + all streaming kinds.
 
 ## One port, three protocols
 
 | Protocol | Content-Type | Handler |
 | --- | --- | --- |
 | Connect unary | `application/json` / `application/proto` | quarkus-connect |
-| Connect server / client streaming | `application/connect+json` / `+proto` | quarkus-connect |
+| Connect server / client / bidi streaming | `application/connect+json` / `+proto` | quarkus-connect |
 | gRPC-Web unary | `application/grpc-web+proto` | quarkus-connect |
 | Native gRPC | `application/grpc` | quarkus-grpc (`use-separate-server=false`) |
 
@@ -44,9 +44,9 @@ Build: JDK **21** toolchain, library bytecode **JVM 17**. `./gradlew check`.
 ## Programming model
 
 Preferred: ordinary Quarkus `@GrpcService` beans. Low-level CDI beans implementing
-`ConnectUnaryMethod` / `ConnectServerStreamMethod` / `ConnectClientStreamMethod` remain supported
-(see integration-tests `PingConnectMethod`).
+`ConnectUnaryMethod` / `ConnectServerStreamMethod` / `ConnectClientStreamMethod` /
+`ConnectBidiStreamMethod` remain supported (see integration-tests `PingConnectMethod`).
 
-Bidi `@GrpcService` methods are discovered but **not** bridged to Connect yet;
-Connect requests for those procedures return `unimplemented`. Native `application/grpc` still
-reaches quarkus-grpc.
+Client/bidi Connect handlers buffer the HTTP request body for the vertical slice (fine for
+demos; large or interactive streams can move to chunked reads later). Native `application/grpc`
+still reaches quarkus-grpc.

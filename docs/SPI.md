@@ -61,6 +61,16 @@ Implement `ConnectClientStreamMethod<Req, Res>`:
 Same `application/connect+*` Content-Types. The HTTP handler buffers the request body for this
 vertical slice (fine for demos; large uploads can move to chunked reads later).
 
+## Bidirectional streaming
+
+Implement `ConnectBidiStreamMethod<Req, Res>`:
+
+| Method | Role |
+| --- | --- |
+| `handle(requests, context, response)` | Full request list in; push responses via `ConnectStreamObserver` |
+
+Same buffered-body vertical slice as client streaming.
+
 ## Errors
 
 Throw `ConnectException(ConnectCode, message, details?)`. Packed `google.rpc` Any details are

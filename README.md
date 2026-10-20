@@ -20,7 +20,7 @@ Kotlin-first runtime with a Java-friendly SPI ([docs/SPI.md](docs/SPI.md)).
 | Global / method `ServerInterceptor`s on Connect | Yes |
 | Server streaming (`application/connect+*`) | Yes — `@GrpcService` `SERVER_STREAMING` methods |
 | Client streaming (`application/connect+*`) | Yes — `@GrpcService` `CLIENT_STREAMING` methods |
-| Bidi streaming over Connect | Not yet — clear `unimplemented` (native gRPC still works) |
+| Bidi streaming (`application/connect+*`) | Yes — `@GrpcService` `BIDI_STREAMING` methods |
 | Chunked media upload example | Yes — `examples/quarkus-kotlin-server` |
 | Packed `google.rpc` error details | Yes |
 | Client deadlines (`connect-timeout-ms`) | Yes |

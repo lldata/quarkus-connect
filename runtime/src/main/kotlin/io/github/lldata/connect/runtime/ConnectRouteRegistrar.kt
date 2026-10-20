@@ -32,7 +32,8 @@ class ConnectRouteRegistrar {
         log.info(
             "Connect RPC enabled; unary=${registry.procedures()} " +
                 "serverStreams=${registry.streamProcedures()} " +
-                "clientStreams=${registry.clientStreamProcedures()}",
+                "clientStreams=${registry.clientStreamProcedures()} " +
+                "bidiStreams=${registry.bidiStreamProcedures()}",
         )
     }
 }

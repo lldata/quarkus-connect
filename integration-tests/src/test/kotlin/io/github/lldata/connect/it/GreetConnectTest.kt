@@ -558,6 +558,46 @@ class GreetConnectTest {
     }
 
     @Test
+    fun `bidi-streaming ChatGreetings over Connect`() {
+        val a = """{"name":"Ada","requestId":"1"}""".toByteArray()
+        val b = """{"name":"Bob","requestId":"2"}""".toByteArray()
+        val req = connectEnvelope(a, compressedFlag = false) + connectEnvelope(b, compressedFlag = false)
+
+        val raw = given()
+            .header("Content-Type", "application/connect+json")
+            .header("connect-protocol-version", "1")
+            .header("connect-accept-encoding", "identity")
+            .header("Authorization", auth)
+            .body(req)
+            .`when`()
+            .post("/greet.v1.GreetService/ChatGreetings")
+            .then()
+            .statusCode(200)
+            .header("Content-Type", equalTo("application/connect+json"))
+            .extract()
+            .asByteArray()
+
+        val messages = mutableListOf<String>()
+        var offset = 0
+        var sawEnd = false
+        while (offset + 5 <= raw.size) {
+            val flag = raw[offset].toInt() and 0xff
+            val len = ByteBuffer.wrap(raw, offset + 1, 4).int
+            val payload = String(raw, offset + 5, len)
+            offset += 5 + len
+            if (flag and 0x02 != 0) {
+                sawEnd = true
+            } else {
+                messages += payload
+            }
+        }
+        assertTrue(sawEnd)
+        assertEquals(2, messages.size)
+        assertTrue(messages[0].contains("Chat: Hello, Ada!"), messages[0])
+        assertTrue(messages[1].contains("Chat: Hello, Bob!"), messages[1])
+    }
+
+    @Test
     fun `grpc-web unauthenticated`() {
         val request = GreetRequest.newBuilder().setName("Web").build()
         val framed = grpcWebDataFrame(request.toByteArray())
