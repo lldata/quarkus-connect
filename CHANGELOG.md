@@ -13,6 +13,7 @@ version is tagged.
 
 ### Fixed
 - Preserve multi-value gRPC response headers/trailers through the Connect bridge (`Metadata.getAll` + Vert.x `headers().add`)
+- Forward `connect-timeout-ms` into gRPC metadata so handlers can echo client deadlines (Deadline Propagation conformance)
 
 ## [0.1.0] - 2026-10-20
 

@@ -34,12 +34,19 @@ internal object ConformanceSupport {
         requests: List<Message>,
         connectGetInfo: ConformancePayload.ConnectGetInfo? = null,
     ): ConformancePayload.RequestInfo {
+        val headers = requestHeadersFromContext()
         val builder =
             ConformancePayload.RequestInfo.newBuilder()
-                .addAllRequestHeaders(requestHeadersFromContext())
+                .addAllRequestHeaders(headers)
                 .addAllRequests(requests.map { Any.pack(it) })
-        // Do not echo timeout_ms: the Connect bridge always attaches a gRPC Context deadline
-        // (default 30s), which is not distinguishable from a client-provided connect-timeout-ms.
+        // Prefer the client-provided Connect timeout header (forwarded by the bridge).
+        headers
+            .firstOrNull { it.name.equals("connect-timeout-ms", ignoreCase = true) }
+            ?.valueList
+            ?.firstOrNull()
+            ?.toLongOrNull()
+            ?.takeIf { it > 0 }
+            ?.let { builder.timeoutMs = it }
         if (connectGetInfo != null) {
             builder.connectGetInfo = connectGetInfo
         }

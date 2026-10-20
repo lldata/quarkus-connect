@@ -165,6 +165,7 @@ object GrpcUnaryInvoker {
         "accept-encoding",
         "content-encoding",
         "connect-protocol-version",
-        "connect-timeout-ms",
+        // connect-timeout-ms is forwarded so handlers can echo the client timeout
+        // (deadline is still applied separately from ConnectCallContext.timeoutMs).
     )
 }
