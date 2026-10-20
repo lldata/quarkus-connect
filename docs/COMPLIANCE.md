@@ -12,9 +12,9 @@ in-repo so external users see the same floor.
 | Unary trailers as `trailer-*` | **Yes** | |
 | `connect-protocol-version: 1` | **Yes** | Unsupported → `invalid_argument` |
 | `connect-timeout-ms` / deadlines | **Yes** | |
-| Content-Encoding / compression | **identity only** | gzip request bodies → `unimplemented` (Quarkus may gzip responses separately) |
+| Content-Encoding / compression | **identity only** | Unary `Content-Encoding`, GET `compression=`, stream `connect-content-encoding` → `unimplemented` if not identity (Quarkus may gzip HTTP responses separately) |
 | `Accept-Encoding: identity` advertised | **Yes** | Unary responses; streaming uses `connect-accept-encoding: identity` |
-| Server streaming `application/connect+*` | **Yes** | End-stream envelope on completion/error |
+| Server streaming `application/connect+*` | **Yes** | End-stream envelope on completion/error; unsupported stream encoding → end-stream `unimplemented` |
 | Client / bidi streaming over Connect | **No** | Clear `unimplemented`; native gRPC still serves them |
 | gRPC-Web unary | **Yes** | `+proto` (and `+json` codec path) |
 | Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false` |

@@ -16,6 +16,7 @@ version is tagged.
 - Unary GET `connect=v1` / `base64=1` / `Vary: Accept-Encoding`; Java `ConnectUnaryMethod` SPI example
 - Clear `unimplemented` for client/bidi streaming RPCs hit over Connect
 - `docs/COMPLIANCE.md` matrix; GET unknown `encoding` → HTTP 415; advertise `Accept-Encoding: identity`
+- Reject non-identity `connect-content-encoding` on Connect streams (parity with unary `Content-Encoding`)
 
 ### Notes
 - Version remains `999-SNAPSHOT` until a human tags a release (see `docs/RELEASE.md`)
