@@ -19,7 +19,7 @@ version is tagged.
 - Thin Connect `connectconformance` matrix **364/364** (no known-failing entries)
 - gRPC-Web **streaming** (server/client/bidi) + compressed frames (`grpc-encoding` / gzip)
 - Unpadded base64 for binary trailers (`grpc-status-details-bin`); echo `grpc-timeout` for Deadline Propagation
-- Connect + gRPC-Web HTTP/1 matrix **654/364** → **654/654**
+- Connect + gRPC-Web HTTP/1 `connectconformance` matrix **654/654**
 
 ## [0.1.0] - 2026-10-20
 
