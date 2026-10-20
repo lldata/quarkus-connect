@@ -67,13 +67,6 @@ class GrpcServiceConnectBridge {
             val definition = service.bindService()
             for (method in definition.methods) {
                 if (method.methodDescriptor.type != MethodDescriptor.MethodType.SERVER_STREAMING) {
-                    if (method.methodDescriptor.type != MethodDescriptor.MethodType.UNARY) {
-                        log.debugf(
-                            "Skipping unsupported gRPC method %s (%s)",
-                            method.methodDescriptor.fullMethodName,
-                            method.methodDescriptor.type,
-                        )
-                    }
                     continue
                 }
                 methods += GrpcBridgedServerStreamMethod.from(method, interceptors)
@@ -85,5 +78,31 @@ class GrpcServiceConnectBridge {
             }
         }
         return methods
+    }
+
+    /**
+     * `@GrpcService` procedures that exist but are not bridged to Connect yet
+     * (client-streaming / bidi). Used so Connect requests get a clear
+     * `unimplemented` instead of falling through to a blank 404.
+     */
+    fun unsupportedConnectProcedures(): Map<String, String> {
+        if (grpcServices.isUnsatisfied) return emptyMap()
+        val out = linkedMapOf<String, String>()
+        for (service in grpcServices) {
+            for (method in service.bindService().methods) {
+                val type = method.methodDescriptor.type
+                if (type == MethodDescriptor.MethodType.CLIENT_STREAMING ||
+                    type == MethodDescriptor.MethodType.BIDI_STREAMING
+                ) {
+                    out[method.methodDescriptor.fullMethodName] = type.name
+                    log.infof(
+                        "Connect does not bridge %s (%s) yet — requests will return unimplemented",
+                        method.methodDescriptor.fullMethodName,
+                        type,
+                    )
+                }
+            }
+        }
+        return out
     }
 }

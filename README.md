@@ -19,6 +19,7 @@ Kotlin-first runtime with a Java-friendly SPI ([docs/SPI.md](docs/SPI.md)).
 | Native gRPC on same HTTP port | Yes (`quarkus.grpc.server.use-separate-server=false`) |
 | Global / method `ServerInterceptor`s on Connect | Yes |
 | Server streaming (`application/connect+*`) | Yes — `@GrpcService` `SERVER_STREAMING` methods |
+| Client / bidi streaming over Connect | Not yet — clear `unimplemented` (native gRPC still works) |
 | Chunked media upload example | Yes — `examples/quarkus-kotlin-server` |
 | Packed `google.rpc` error details | Yes |
 | Client deadlines (`connect-timeout-ms`) | Yes |
@@ -97,8 +98,12 @@ Published to Maven Central (when tagged): `io.github.lldata:quarkus-connect` and
 
 [Apache License 2.0](LICENSE) — SPDX `Apache-2.0`.
 
-## Maintenance
+## Contributing / release
 
-See [AGENTS.md](AGENTS.md) for agent-maintainer rules. CI, Dependabot, CODEOWNERS, and the
-tag-gated publish workflow follow house style from
+- [CONTRIBUTING.md](CONTRIBUTING.md) — build + PR expectations  
+- [CHANGELOG.md](CHANGELOG.md) — notable changes  
+- [docs/RELEASE.md](docs/RELEASE.md) — version bump + tag checklist (Central secrets optional until publish)  
+- [AGENTS.md](AGENTS.md) — agent-maintainer rules  
+
+CI, Dependabot, CODEOWNERS, and the tag-gated publish workflow follow house style from
 [lldata/quarkus-kotlin-typescript-rest-client-generator](https://github.com/lldata/quarkus-kotlin-typescript-rest-client-generator).

@@ -13,6 +13,9 @@ service GreetService {
   rpc Slow(GreetRequest) returns (GreetResponse);
   // Connect server streaming (`application/connect+json|proto`)
   rpc StreamGreetings(GreetRequest) returns (stream GreetResponse);
+
+  // Present so Connect returns unimplemented (not 404) for client-streaming RPCs.
+  rpc CollectGreetings(stream GreetRequest) returns (GreetResponse);
 }
 
 message GreetRequest {
