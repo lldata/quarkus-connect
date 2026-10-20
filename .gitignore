@@ -1,0 +1,22 @@
+# Build
+build/
+target/
+.gradle/
+out/
+*.class
+*.log
+.quarkus/
+
+# IDE
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+
+# OS
+.DS_Store
+
+# Local
+dependency-reduced-pom.xml

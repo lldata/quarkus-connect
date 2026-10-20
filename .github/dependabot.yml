@@ -1,0 +1,33 @@
+# Follow the latest on a weekly cadence (house style).
+# A bump that passes CI may auto-merge via dependabot-auto-merge.yml; CODEOWNERS
+# still gates paths that constrain the agent.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: gradle
+    directories:
+      - "/"
+      - "/runtime"
+      - "/deployment"
+      - "/integration-tests"
+    schedule:
+      interval: weekly
+    groups:
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin*"
+      quarkus:
+        patterns:
+          - "io.quarkus*"
+          - "io.rest-assured*"
+      test:
+        patterns:
+          - "org.junit*"

@@ -1,0 +1,8 @@
+# Authors whose issues are work orders: the agent implements them and opens a PR.
+#
+# An issue from anyone not listed here gets analysis and a label, never a pull request.
+# See AGENTS.md, "Who can ask for what".
+#
+# One login per line.
+
+lldata

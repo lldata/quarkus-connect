@@ -1,0 +1,13 @@
+name: "Connect RPC"
+description: "Connect RPC unary server protocol for Quarkus (protobuf/JSON over HTTP)"
+metadata:
+  keywords:
+    - connect
+    - connect-rpc
+    - grpc
+    - protobuf
+    - rpc
+  categories:
+    - "miscellaneous"
+  status: "preview"
+  guide: "https://github.com/lldata/quarkus-connect"

@@ -1,0 +1,9 @@
+# The agent may propose changes to any of this. It may not merge them.
+#
+# Paths that constrain or observe the agent require human (@lldata) review:
+# workflows, AGENTS.md, root build / version line.
+
+/.github/                @lldata
+/AGENTS.md               @lldata
+/build.gradle.kts        @lldata
+/gradle.properties       @lldata

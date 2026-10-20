@@ -1,0 +1,68 @@
+name: Publish
+
+# Tag-driven Central Portal upload (draft GitHub release). Secrets are not wired yet on
+# this greenfield repo — this workflow documents the house-style gate and will fail closed
+# until SIGNING_* / MAVEN_CENTRAL_* repository secrets exist and Maven publishing is
+# configured in Gradle (see AGENTS.md gaps).
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+**"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    if: github.repository == 'lldata/quarkus-connect'
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Require the publishing secrets
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+        run: |
+          missing=""
+          for name in SIGNING_KEY SIGNING_PASSWORD MAVEN_CENTRAL_USERNAME MAVEN_CENTRAL_PASSWORD; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::No value for repository secret(s):$missing"
+            exit 1
+          fi
+
+      - name: Resolve the version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Check the tag matches the committed version
+        env:
+          TAGGED: ${{ steps.version.outputs.version }}
+        run: |
+          committed=$(sed -n 's/^version=//p' gradle.properties)
+          if [ "$committed" != "$TAGGED" ]; then
+            echo "::error::Tag v$TAGGED does not match gradle.properties version $committed"
+            exit 1
+          fi
+
+      - name: Build
+        run: ./gradlew check --no-daemon
+
+      - name: Publish placeholder
+        run: |
+          echo "::error::Maven Central publishing plugin is not wired in Gradle yet (bootstrap gap)."
+          echo "Add com.vanniktech.maven.publish (or equivalent) before enabling tag publishes."
+          exit 1
