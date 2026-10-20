@@ -26,4 +26,5 @@ version is tagged.
 - JSON codec registers protobuf `Any` types from the message file descriptor (needed for conformance payloads)
 
 ### Notes
-- Version remains `999-SNAPSHOT` until a human tags a release (see `docs/RELEASE.md`)
+- Version remains `999-SNAPSHOT` until a human bumps to **`0.1.0`** (or similar) and tags; see `docs/RELEASE.md`
+- Without Central secrets: `./scripts/package-github-release.sh 0.1.0` stages jars + notes for a GitHub-only release
