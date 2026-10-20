@@ -4,9 +4,12 @@ The protocol layer is Kotlin-first, but registration and call handling use **Jav
 interfaces** under `io.github.lldata.connect.spi`. A Java programming model (annotations /
 codegen) can bind onto these types later without rewriting Connect framing.
 
+Ordinary Quarkus apps should prefer `@GrpcService` (bridged automatically). Use the SPI when you
+need a Connect-only procedure or to prove a Java programming model.
+
 ## Unary
 
-Implement `ConnectUnaryMethod<Req, Res>`:
+Implement `ConnectUnaryMethod<Req, Res>` as an `@ApplicationScoped` CDI bean:
 
 | Method | Role |
 | --- | --- |
@@ -15,10 +18,28 @@ Implement `ConnectUnaryMethod<Req, Res>`:
 | `handle(request, context)` | Returns the response or throws `ConnectException` |
 
 `ConnectCallContext` exposes request headers, timeout, and response header/trailer writers.
-`ConnectCodec` is `PROTO` or `JSON`.
+Trailers are written on the wire as `trailer-<name>` (Connect unary). `ConnectCodec` is `PROTO`
+or `JSON`.
 
-Ordinary Quarkus apps do **not** implement this SPI by hand: `@GrpcService` beans are bridged
-automatically. The SPI exists for custom registrations and for a future Java DX layer.
+### Java example
+
+```java
+@ApplicationScoped
+public class PingConnectMethod implements ConnectUnaryMethod<GreetRequest, GreetResponse> {
+  @Override public String procedure() { return "demo.v1.DemoService/Ping"; }
+  @Override public Class<GreetRequest> requestType() { return GreetRequest.class; }
+  @Override public Class<GreetResponse> responseType() { return GreetResponse.class; }
+
+  @Override
+  public GreetResponse handle(GreetRequest request, ConnectCallContext context) {
+    context.responseHeader("x-ping", "1");
+    context.responseTrailer("x-ping-trail", "ok"); // → HTTP header trailer-x-ping-trail
+    return GreetResponse.newBuilder().setGreeting("Pong").build();
+  }
+}
+```
+
+See `integration-tests/.../PingConnectMethod.java` for a working bean.
 
 ## Server streaming
 

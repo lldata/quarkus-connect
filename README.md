@@ -47,14 +47,20 @@ class DemoGrpcService : MutinyDemoServiceGrpc.DemoServiceImplBase() {
 ```
 
 ```bash
+# POST unary JSON
 curl -sS -X POST http://localhost:8080/demo.v1.DemoService/Echo \
   -H 'Content-Type: application/json' \
   -H 'connect-protocol-version: 1' \
   -H 'Authorization: Bearer demo-user' \
   -d '{"message":"hello","clientSeq":"7"}'
+
+# GET unary (side-effect-free; connect=v1 per protocol)
+curl -sS 'http://localhost:8080/demo.v1.DemoService/Echo?connect=v1&encoding=json&message=%7B%22message%22%3A%22hi%22%2C%22clientSeq%22%3A%221%22%7D' \
+  -H 'Authorization: Bearer demo-user'
 ```
 
-See **`examples/quarkus-kotlin-server`** and **`examples/flutter-web-client`**.
+See **`examples/quarkus-kotlin-server`**, **`examples/flutter-web-client`**, [docs/SPI.md](docs/SPI.md),
+and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Content types
 

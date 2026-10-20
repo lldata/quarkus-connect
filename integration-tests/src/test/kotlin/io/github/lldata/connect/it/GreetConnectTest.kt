@@ -142,12 +142,85 @@ class GreetConnectTest {
             .header("Authorization", auth)
             .queryParam("encoding", "json")
             .queryParam("message", """{"name":"Get"}""")
-            .queryParam("connect", "1")
+            .queryParam("connect", "v1")
             .`when`()
             .get("/greet.v1.GreetService/Greet")
             .then()
             .statusCode(200)
+            .header("Vary", equalTo("Accept-Encoding"))
             .body("greeting", equalTo("Hello, Get!"))
+    }
+
+    @Test
+    fun `GET unary with URL-safe base64 proto message`() {
+        val request = GreetRequest.newBuilder().setName("ProtoGet").setRequestId(9).build()
+        val b64 = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(request.toByteArray())
+
+        val raw = given()
+            .header("Authorization", auth)
+            .queryParam("connect", "v1")
+            .queryParam("encoding", "proto")
+            .queryParam("base64", "1")
+            .queryParam("message", b64)
+            .`when`()
+            .get("/greet.v1.GreetService/Greet")
+            .then()
+            .statusCode(200)
+            .header("Content-Type", equalTo("application/proto"))
+            .header("Vary", equalTo("Accept-Encoding"))
+            .extract()
+            .asByteArray()
+
+        val response = GreetResponse.parseFrom(raw)
+        assertEquals("Hello, ProtoGet!", response.greeting)
+        assertEquals(9L, response.requestId)
+    }
+
+    @Test
+    fun `unsupported connect-protocol-version returns invalid_argument`() {
+        given()
+            .header("Content-Type", "application/json")
+            .header("connect-protocol-version", "99")
+            .header("Authorization", auth)
+            .body("""{"name":"Buf"}""")
+            .`when`()
+            .post("/greet.v1.GreetService/Greet")
+            .then()
+            .statusCode(400)
+            .body("code", equalTo("invalid_argument"))
+    }
+
+    @Test
+    fun `Java SPI Ping sets trailer-prefixed metadata`() {
+        given()
+            .header("Content-Type", "application/json")
+            .header("connect-protocol-version", "1")
+            .header("Authorization", auth)
+            .body("""{"name":"Spi"}""")
+            .`when`()
+            .post("/greet.v1.GreetService/Ping")
+            .then()
+            .statusCode(200)
+            .header("x-ping", equalTo("1"))
+            .header("trailer-x-ping-trail", equalTo("ok"))
+            .body("greeting", equalTo("Pong, Spi!"))
+    }
+
+    @Test
+    fun `error JSON omits null message field`() {
+        // Ping SPI throws ConnectException(NOT_FOUND, null) for name=nomsg
+        val body = given()
+            .header("Content-Type", "application/json")
+            .header("connect-protocol-version", "1")
+            .body("""{"name":"nomsg"}""")
+            .`when`()
+            .post("/greet.v1.GreetService/Ping")
+            .then()
+            .statusCode(404)
+            .body("code", equalTo("not_found"))
+            .extract()
+            .asString()
+        assertTrue(!body.contains("\"message\""), "error JSON must omit empty message: $body")
     }
 
     @Test
