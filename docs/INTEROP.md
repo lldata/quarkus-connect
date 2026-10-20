@@ -28,15 +28,16 @@ with a ServerCompat stdin/stdout adapter (`ConformanceMain`). The runner binary 
 In scope:
 
 - HTTP/1.1 + **HTTP/2 cleartext (h2c)**
-- **Connect** and **gRPC-Web** on H1 and H2
-- Codecs: proto + JSON; compression: identity + gzip (including gRPC-Web compressed frames)
+- **Connect**, **gRPC-Web**, and **native gRPC** (`PROTOCOL_GRPC`, proto codec) on H2
+- Codecs: proto + JSON (JSON for Connect + gRPC-Web only; gRPC×JSON excluded)
+- Compression: identity + gzip (including gRPC-Web compressed frames)
 - Stream types: unary, client, server, half-duplex bidi
 - Connect GET; trailers; half-duplex bidi over HTTP/1.1
 
 Out of config / excluded:
 
 - TLS / client certs / HTTP/3
-- Native gRPC (`PROTOCOL_GRPC`)
+- Native gRPC × JSON (`exclude_cases`)
 - Full-duplex bidi
 - Message receive limits
 - Brotli / zstd / deflate / snappy
@@ -47,8 +48,10 @@ steal `application/grpc-web*` and answer with native `application/grpc`.
 
 ### Known-failing (`conformance/config/known-failing.txt`)
 
-Exact case names that still fail and **must** keep failing for CI to stay green.
-As of gRPC-Web×HTTP/2 enablement (**v0.1.3**): **1308 pass / 0 known-failing**.
+Patterns that still fail and **must** keep failing for CI to stay green.
+As of native gRPC enablement: **1514 pass / 88 known-failing** (Vert.x padded
+`grpc-status-details-bin` on Errors/Duplicate Metadata; quarkus-grpc unexpected-request
+mapping). See comments in `known-failing.txt`.
 
 Remove entries from `known-failing.txt` when a case starts passing — the runner requires known-failing cases to fail.
 

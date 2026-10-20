@@ -8,6 +8,10 @@ version is tagged.
 
 ## [Unreleased]
 
+### Added
+- Enable **native gRPC** (`PROTOCOL_GRPC`, proto) in the conformance matrix on h2c
+  (exclude gRPC×JSON; known-fail Vert.x padded `grpc-status-details-bin` + unexpected-request mapping)
+
 ### Changed
 - Development continues on `0.1.4-SNAPSHOT` after the `0.1.3` GitHub release
 
