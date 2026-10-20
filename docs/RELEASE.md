@@ -39,7 +39,7 @@ You can still:
 
 | Ready | Item |
 | --- | --- |
-| Yes | Unary Connect + gRPC-Web + server streaming for `@GrpcService` |
+| Yes | Unary Connect + gRPC-Web + server/client streaming for `@GrpcService` |
 | Yes | Examples + Flutter client + SPI docs |
 | Yes | Publish plugin + fail-closed workflow |
 | Human | Repository secrets + Claude Code app (optional for agent automation) |

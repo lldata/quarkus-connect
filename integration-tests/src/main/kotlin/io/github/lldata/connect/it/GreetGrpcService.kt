@@ -82,11 +82,16 @@ class GreetGrpcService : MutinyGreetServiceGrpc.GreetServiceImplBase() {
             .onItem().call { _ -> Uni.createFrom().voidItem().onItem().delayIt().by(Duration.ofMillis(20)) }
     }
 
-    // Client-streaming exists so Connect can return a clear unimplemented (not 404).
     override fun collectGreetings(requests: Multi<GreetRequest>): Uni<GreetResponse> =
-        Uni.createFrom().failure(
-            StatusRuntimeException(Status.UNIMPLEMENTED.withDescription("native gRPC only for now")),
-        )
+        requests.collect().asList().onItem().transform { list ->
+            val names = list.map { it.name.trim() }.filter { it.isNotEmpty() }
+            val joined = if (names.isEmpty()) "nobody" else names.joinToString(", ")
+            val requestId = list.lastOrNull()?.requestId ?: 0L
+            GreetResponse.newBuilder()
+                .setGreeting("Hello, $joined!")
+                .setRequestId(requestId)
+                .build()
+        }
 
     private fun statusFor(code: String): Status = when (code.trim().lowercase()) {
         "invalid_argument" -> Status.INVALID_ARGUMENT

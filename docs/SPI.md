@@ -50,6 +50,17 @@ Implement `ConnectServerStreamMethod<Req, Res>` and push via `ConnectStreamObser
 
 Wire Content-Type: `application/connect+proto` or `application/connect+json`.
 
+## Client streaming
+
+Implement `ConnectClientStreamMethod<Req, Res>`:
+
+| Method | Role |
+| --- | --- |
+| `handle(requests, context)` | Receives the full list of request messages; returns one response |
+
+Same `application/connect+*` Content-Types. The HTTP handler buffers the request body for this
+vertical slice (fine for demos; large uploads can move to chunked reads later).
+
 ## Errors
 
 Throw `ConnectException(ConnectCode, message, details?)`. Packed `google.rpc` Any details are

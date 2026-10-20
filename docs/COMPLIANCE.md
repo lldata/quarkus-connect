@@ -15,7 +15,8 @@ in-repo so external users see the same floor.
 | Content-Encoding / compression | **identity + gzip** | Unary `Content-Encoding` / GET `compression=` / stream `connect-content-encoding`; response negotiation via `Accept-Encoding` / `connect-accept-encoding`. Other codings (br, zstd, …) → `unimplemented` |
 | Accept-Encoding advertisement | **Yes** | Unary `Accept-Encoding: gzip, identity`; streaming `connect-accept-encoding: gzip, identity` |
 | Server streaming `application/connect+*` | **Yes** | End-stream envelope on completion/error; unsupported stream encoding → end-stream `unimplemented` |
-| Client / bidi streaming over Connect | **No** | Clear `unimplemented`; native gRPC still serves them |
+| Client streaming over Connect | **Yes** | `@GrpcService` `CLIENT_STREAMING`; buffered request body (vertical slice) |
+| Bidi streaming over Connect | **No** | Clear `unimplemented`; native gRPC still serves them |
 | gRPC-Web unary | **Yes** | `+proto` (and `+json` codec path) |
 | Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false` |
 | Interceptors on Connect | **Yes** | `@GlobalInterceptor` via bridge |
@@ -34,7 +35,8 @@ in-repo so external users see the same floor.
 
 ## Deliberately later / human
 
-- Connect client & bidi streaming
+- Connect bidi streaming
+- Streaming request body without full buffering (large client streams)
 - Additional compressors (br, zstd)
 - Maven Central secrets + first tagged release (`docs/RELEASE.md`)
 - Server-side ffmpeg thumbnails
