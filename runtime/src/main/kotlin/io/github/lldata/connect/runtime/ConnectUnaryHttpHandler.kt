@@ -11,6 +11,7 @@ import io.github.lldata.connect.runtime.grpc.GrpcWebFraming
 import io.github.lldata.connect.spi.ConnectCodec
 import io.github.lldata.connect.spi.ConnectCode
 import io.github.lldata.connect.spi.ConnectException
+import io.github.lldata.connect.spi.ConnectClientStreamMethod
 import io.github.lldata.connect.spi.ConnectServerStreamMethod
 import io.github.lldata.connect.spi.ConnectStreamObserver
 import io.github.lldata.connect.spi.ConnectUnaryMethod
@@ -51,35 +52,51 @@ class ConnectUnaryHttpHandler(
         val procedure = ConnectMethodRegistry.normalizeProcedure(request.path())
 
         if (wire == WireProtocol.CONNECT_STREAM) {
-            val stream = registry.findStream(procedure)
-            if (stream == null) {
-                when {
-                    registry.find(procedure) != null -> writeConnectError(
-                        ctx,
-                        ConnectException(
-                            ConnectCode.UNIMPLEMENTED,
-                            "Procedure /$procedure is unary; use application/proto or application/json",
-                        ),
-                    )
-                    registry.unsupportedType(procedure) != null -> writeConnectStreamError(
-                        ctx,
-                        unimplementedStreaming(procedure, registry.unsupportedType(procedure)!!),
-                        contentType,
-                    )
-                    else -> ctx.next()
-                }
-                return
-            }
             if (request.method() != HttpMethod.POST) {
                 writeConnectError(ctx, ConnectException.invalidArgument("Connect streaming requires POST"))
                 return
             }
-            handleConnectStream(ctx, procedure, stream, contentType)
+            val serverStream = registry.findStream(procedure)
+            if (serverStream != null) {
+                handleConnectStream(ctx, procedure, serverStream, contentType)
+                return
+            }
+            val clientStream = registry.findClientStream(procedure)
+            if (clientStream != null) {
+                handleConnectClientStream(ctx, procedure, clientStream, contentType)
+                return
+            }
+            when {
+                registry.find(procedure) != null -> writeConnectError(
+                    ctx,
+                    ConnectException(
+                        ConnectCode.UNIMPLEMENTED,
+                        "Procedure /$procedure is unary; use application/proto or application/json",
+                    ),
+                )
+                registry.unsupportedType(procedure) != null -> writeConnectStreamError(
+                    ctx,
+                    unimplementedStreaming(procedure, registry.unsupportedType(procedure)!!),
+                    contentType,
+                )
+                else -> ctx.next()
+            }
             return
         }
 
         val method = registry.find(procedure)
         if (method == null) {
+            // Unary Content-Type against a streaming procedure → clear error.
+            if (registry.findStream(procedure) != null || registry.findClientStream(procedure) != null) {
+                writeConnectError(
+                    ctx,
+                    ConnectException(
+                        ConnectCode.UNIMPLEMENTED,
+                        "Procedure /$procedure is streaming; use application/connect+json or application/connect+proto",
+                    ),
+                )
+                return
+            }
             val unsupported = registry.unsupportedType(procedure)
             if (unsupported != null) {
                 writeConnectError(ctx, unimplementedStreaming(procedure, unsupported))
@@ -212,6 +229,85 @@ class ConnectUnaryHttpHandler(
                 if (!response.ended()) {
                     response.end(io.vertx.core.buffer.Buffer.buffer(end))
                 }
+            }
+        }
+    }
+
+    private fun handleConnectClientStream(
+        ctx: RoutingContext,
+        procedure: String,
+        method: ConnectClientStreamMethod<out Message, out Message>,
+        contentType: String?,
+    ) {
+        val version = ctx.request().getHeader(ConnectProtocolConstants.PROTOCOL_VERSION_HEADER)
+        if (version != null && version != ConnectProtocolConstants.PROTOCOL_VERSION) {
+            writeConnectStreamError(
+                ctx,
+                ConnectException.invalidArgument("Unsupported connect-protocol-version: $version"),
+                contentType,
+            )
+            return
+        }
+
+        val requestEncoding = try {
+            ConnectCompression.requireSupported(
+                ctx.request().getHeader(ConnectProtocolConstants.STREAMING_CONTENT_ENCODING_HEADER),
+                "connect-content-encoding",
+            )
+        } catch (e: ConnectException) {
+            writeConnectStreamError(ctx, e, contentType)
+            return
+        }
+
+        val responseEncoding = ConnectCompression.negotiateResponseEncoding(
+            ctx.request().getHeader(ConnectProtocolConstants.STREAMING_ACCEPT_ENCODING_HEADER),
+            requestEncoding,
+        )
+
+        val codec = ConnectCodec.fromWireName(ConnectEnvelope.codecWireName(contentType))
+            ?: ConnectCodec.PROTO
+        val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val headers = collectHeaders(ctx)
+        val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
+
+        val requestPayloads = try {
+            ConnectEnvelope.decodeAllDataMessages(body, requestEncoding)
+        } catch (e: ConnectException) {
+            writeConnectStreamError(ctx, e, contentType, responseEncoding)
+            return
+        }
+
+        val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs)
+        val responseCt = ConnectEnvelope.normalizeContentType(contentType)
+
+        ctx.vertx().executeBlocking(
+            java.util.concurrent.Callable {
+                @Suppress("UNCHECKED_CAST")
+                val typed = method as ConnectClientStreamMethod<Message, Message>
+                val requests = requestPayloads.map { ProtobufCodecSupport.parse(it, typed.requestType(), codec) }
+                val responseMessage = typed.handle(requests, callContext)
+                ProtobufCodecSupport.encode(responseMessage, codec)
+            },
+            false,
+        ).onComplete { ar ->
+            val response = ctx.response()
+                .setStatusCode(200)
+                .putHeader(HttpHeaders.CONTENT_TYPE, responseCt)
+                .putHeader(ConnectProtocolConstants.STREAMING_ACCEPT_ENCODING_HEADER, ConnectCompression.ACCEPT_ADVERTISEMENT)
+            if (responseEncoding != ConnectCompression.IDENTITY) {
+                response.putHeader(ConnectProtocolConstants.STREAMING_CONTENT_ENCODING_HEADER, responseEncoding)
+            }
+            if (ar.succeeded()) {
+                val data = ConnectEnvelope.encodeDataMaybeCompressed(ar.result(), responseEncoding)
+                val end = ConnectEnvelope.encodeEndStream(null, callContext.snapshotTrailers())
+                response.end(io.vertx.core.buffer.Buffer.buffer(data + end))
+            } else {
+                val error = GrpcStatusMapping.toConnectException(ar.cause())
+                response.end(
+                    io.vertx.core.buffer.Buffer.buffer(
+                        ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers()),
+                    ),
+                )
             }
         }
     }
@@ -601,7 +697,7 @@ class ConnectUnaryHttpHandler(
         ConnectException(
             ConnectCode.UNIMPLEMENTED,
             "Connect does not support $grpcType for /$procedure yet " +
-                "(unary and server-streaming only; client/bidi streaming planned later)",
+                "(unary, server-streaming, and client-streaming only; bidi planned later)",
         )
 
     companion object {

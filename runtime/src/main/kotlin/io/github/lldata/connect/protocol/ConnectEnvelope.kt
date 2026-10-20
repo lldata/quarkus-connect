@@ -60,29 +60,48 @@ object ConnectEnvelope {
      * is used to decompress the payload.
      */
     fun decodeFirstDataMessage(body: ByteArray, requestEncoding: String? = ConnectCompression.IDENTITY): ByteArray {
-        if (body.size < 5) {
+        val all = decodeAllDataMessages(body, requestEncoding)
+        if (all.isEmpty()) {
+            throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Connect stream request has no data envelopes")
+        }
+        return all[0]
+    }
+
+    /**
+     * Decode every data envelope from a Connect streaming request body (client streaming).
+     */
+    fun decodeAllDataMessages(body: ByteArray, requestEncoding: String? = ConnectCompression.IDENTITY): List<ByteArray> {
+        if (body.isEmpty()) return emptyList()
+        val out = mutableListOf<ByteArray>()
+        var offset = 0
+        while (offset + 5 <= body.size) {
+            val flag = body[offset].toInt() and 0xff
+            if (flag and FLAG_END_STREAM != 0) {
+                throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Request stream must not send end-stream")
+            }
+            val length = ByteBuffer.wrap(body, offset + 1, 4).int
+            if (length < 0 || offset + 5 + length > body.size) {
+                throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Invalid Connect envelope length: $length")
+            }
+            val payload = body.copyOfRange(offset + 5, offset + 5 + length)
+            offset += 5 + length
+            out += if (flag and FLAG_COMPRESSED != 0) {
+                val encoding = ConnectCompression.normalize(requestEncoding)
+                if (encoding == ConnectCompression.IDENTITY) {
+                    throw ConnectException(
+                        ConnectCode.INVALID_ARGUMENT,
+                        "Compressed envelope requires connect-content-encoding (not identity)",
+                    )
+                }
+                ConnectCompression.decompress(encoding, payload)
+            } else {
+                payload
+            }
+        }
+        if (offset != body.size) {
             throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Truncated Connect envelope")
         }
-        val flag = body[0].toInt() and 0xff
-        if (flag and FLAG_END_STREAM != 0) {
-            throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Request stream must not send end-stream")
-        }
-        val length = ByteBuffer.wrap(body, 1, 4).int
-        if (length < 0 || 5 + length > body.size) {
-            throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Invalid Connect envelope length: $length")
-        }
-        val payload = body.copyOfRange(5, 5 + length)
-        if (flag and FLAG_COMPRESSED != 0) {
-            val encoding = ConnectCompression.normalize(requestEncoding)
-            if (encoding == ConnectCompression.IDENTITY) {
-                throw ConnectException(
-                    ConnectCode.INVALID_ARGUMENT,
-                    "Compressed envelope requires connect-content-encoding (not identity)",
-                )
-            }
-            return ConnectCompression.decompress(encoding, payload)
-        }
-        return payload
+        return out
     }
 
     /**

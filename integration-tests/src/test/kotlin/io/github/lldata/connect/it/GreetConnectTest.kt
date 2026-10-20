@@ -504,7 +504,46 @@ class GreetConnectTest {
     }
 
     @Test
-    fun `client-streaming RPC returns Connect unimplemented not 404`() {
+    fun `client-streaming CollectGreetings over Connect`() {
+        val a = """{"name":"Ada"}""".toByteArray()
+        val b = """{"name":"Bob"}""".toByteArray()
+        val req = connectEnvelope(a, compressedFlag = false) + connectEnvelope(b, compressedFlag = false)
+
+        val raw = given()
+            .header("Content-Type", "application/connect+json")
+            .header("connect-protocol-version", "1")
+            .header("connect-accept-encoding", "identity")
+            .header("Authorization", auth)
+            .body(req)
+            .`when`()
+            .post("/greet.v1.GreetService/CollectGreetings")
+            .then()
+            .statusCode(200)
+            .header("Content-Type", equalTo("application/connect+json"))
+            .extract()
+            .asByteArray()
+
+        val messages = mutableListOf<String>()
+        var offset = 0
+        var sawEnd = false
+        while (offset + 5 <= raw.size) {
+            val flag = raw[offset].toInt() and 0xff
+            val len = ByteBuffer.wrap(raw, offset + 1, 4).int
+            val payload = String(raw, offset + 5, len)
+            offset += 5 + len
+            if (flag and 0x02 != 0) {
+                sawEnd = true
+            } else {
+                messages += payload
+            }
+        }
+        assertTrue(sawEnd)
+        assertEquals(1, messages.size)
+        assertTrue(messages[0].contains("Hello, Ada, Bob!"), messages[0])
+    }
+
+    @Test
+    fun `client-streaming with unary Content-Type returns unimplemented hint`() {
         given()
             .header("Content-Type", "application/json")
             .header("connect-protocol-version", "1")
@@ -515,7 +554,7 @@ class GreetConnectTest {
             .then()
             .statusCode(501)
             .body("code", equalTo("unimplemented"))
-            .body("message", org.hamcrest.Matchers.containsString("CLIENT_STREAMING"))
+            .body("message", org.hamcrest.Matchers.containsString("streaming"))
     }
 
     @Test

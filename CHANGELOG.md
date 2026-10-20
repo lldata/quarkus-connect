@@ -18,6 +18,7 @@ version is tagged.
 - `docs/COMPLIANCE.md` matrix; GET unknown `encoding` → HTTP 415; advertise `Accept-Encoding: identity`
 - Reject non-identity `connect-content-encoding` on Connect streams (parity with unary `Content-Encoding`)
 - **gzip** request/response compression for Connect unary and server streaming (`Content-Encoding` / `Accept-Encoding`, GET `compression=`, `connect-content-encoding` / `connect-accept-encoding`)
+- Connect **client streaming** for `@GrpcService` `CLIENT_STREAMING` methods
 
 ### Notes
 - Version remains `999-SNAPSHOT` until a human tags a release (see `docs/RELEASE.md`)
