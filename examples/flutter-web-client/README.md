@@ -1,12 +1,19 @@
 # examples/flutter-web-client
 
-Flutter app (web + iOS/Android) using the [Connect](https://connectrpc.com/) protocol
+Flutter app (**web + iOS/Android**) using the [Connect](https://connectrpc.com/) protocol
 via [`connectrpc`](https://pub.dev/packages/connectrpc) against
 [`examples/quarkus-kotlin-server`](../quarkus-kotlin-server).
 
-Dart stubs are generated from the **same** `demo/v1/demo.proto` as the server
-(`buf generate`). Generated sources under `lib/src/gen/` are committed so the
-example runs without a Buf install.
+The same generated Dart clients and Connect JSON/binary transport are used on every
+platform. HTTP is selected by conditional import:
+
+- Web → `package:connectrpc/web.dart` (`lib/connect_http_web.dart`)
+- iOS/Android/desktop → `package:connectrpc/io.dart` (`lib/connect_http_io.dart`)
+
+`lib/connect_http.dart` switches automatically — no hand-edit required to drop grpc-dart.
+
+Dart stubs are generated from the **same** protos as the server (`buf generate`). Generated
+sources under `lib/src/gen/` are committed so the example runs without a Buf install.
 
 ## Prerequisites
 
@@ -21,7 +28,18 @@ flutter pub get
 flutter run -d chrome
 ```
 
-Default base URL: `http://localhost:8080`. Tokens: `demo-user`, `demo-guest`.
+## Run (iOS / Android)
+
+Same app, same Connect transport:
+
+```bash
+cd examples/flutter-web-client
+flutter pub get
+flutter run -d ios      # or: flutter run -d android
+```
+
+Point **Base URL** at your machine (use the LAN IP, not `localhost`, from a physical device).
+Tokens: `demo-user`, `demo-guest`.
 
 ## Regenerate Dart from proto
 
@@ -49,9 +67,3 @@ See server `docs/LIVE_UPDATES.md` for reconnect semantics.
 ```bash
 buf generate   # after editing proto/media/v1/media.proto
 ```
-
-## Mobile note
-
-Web uses `package:connectrpc/web.dart` (`fetch`). For iOS/Android, switch the
-HTTP client import to `package:connectrpc/io.dart` or `http2.dart` — same
-generated clients and Connect JSON/binary transport (path to drop grpc-dart).

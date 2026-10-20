@@ -148,7 +148,23 @@ class GreetConnectTest {
             .then()
             .statusCode(200)
             .header("Vary", equalTo("Accept-Encoding"))
+            .header("Accept-Encoding", equalTo("identity"))
             .body("greeting", equalTo("Hello, Get!"))
+    }
+
+    @Test
+    fun `GET unsupported encoding returns 415`() {
+        given()
+            .header("Authorization", auth)
+            .queryParam("connect", "v1")
+            .queryParam("encoding", "xml")
+            .queryParam("message", "{}")
+            .`when`()
+            .get("/greet.v1.GreetService/Greet")
+            .then()
+            .statusCode(415)
+            .header("Content-Type", equalTo("application/json"))
+            .body("code", equalTo("invalid_argument"))
     }
 
     @Test

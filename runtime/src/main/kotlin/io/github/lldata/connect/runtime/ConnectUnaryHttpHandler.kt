@@ -139,6 +139,7 @@ class ConnectUnaryHttpHandler(
         val response = ctx.response()
             .setStatusCode(200)
             .putHeader(HttpHeaders.CONTENT_TYPE, responseCt)
+            .putHeader("connect-accept-encoding", "identity")
             .setChunked(true)
 
         val finished = AtomicBoolean(false)
@@ -204,6 +205,7 @@ class ConnectUnaryHttpHandler(
         val response = ctx.response()
             .setStatusCode(200)
             .putHeader(HttpHeaders.CONTENT_TYPE, ConnectEnvelope.normalizeContentType(contentType))
+            .putHeader("connect-accept-encoding", "identity")
         response.end(io.vertx.core.buffer.Buffer.buffer(ConnectEnvelope.encodeEndStream(error)))
     }
 
@@ -265,7 +267,27 @@ class ConnectUnaryHttpHandler(
             return
         }
 
-        val codec = ConnectCodec.fromWireName(params.get("encoding")) ?: ConnectCodec.JSON
+        val encodingParam = params.get("encoding")
+        val codec = when {
+            encodingParam.isNullOrBlank() -> ConnectCodec.JSON
+            else -> ConnectCodec.fromWireName(encodingParam)
+        }
+        if (codec == null) {
+            // Spec: unsupported Message-Codec → HTTP 415.
+            val response = ctx.response()
+                .setStatusCode(415)
+                .putHeader(HttpHeaders.CONTENT_TYPE, ConnectProtocolConstants.CONTENT_TYPE_JSON)
+                .putHeader(HttpHeaders.ACCEPT_ENCODING, "identity")
+            response.headers().add(HttpHeaders.VARY, "Accept-Encoding")
+            response.end(
+                ConnectErrorJson.toJson(
+                    ConnectException.invalidArgument(
+                        "Unsupported encoding '$encodingParam'; use json or proto",
+                    ),
+                ),
+            )
+            return
+        }
         val compression = params.get("compression") ?: "identity"
         if (!compression.equals("identity", ignoreCase = true)) {
             writeConnectError(
@@ -383,6 +405,7 @@ class ConnectUnaryHttpHandler(
     ) {
         val response = ctx.response().setStatusCode(200)
         response.putHeader(HttpHeaders.CONTENT_TYPE, codec.contentType)
+        response.putHeader(HttpHeaders.ACCEPT_ENCODING, "identity")
         if (varyAcceptEncoding) {
             response.headers().add(HttpHeaders.VARY, "Accept-Encoding")
         }
@@ -402,6 +425,7 @@ class ConnectUnaryHttpHandler(
         }
         val response = ctx.response().setStatusCode(error.code.httpStatus)
         response.putHeader(HttpHeaders.CONTENT_TYPE, ConnectProtocolConstants.CONTENT_TYPE_JSON)
+        response.putHeader(HttpHeaders.ACCEPT_ENCODING, "identity")
         if (varyAcceptEncoding) {
             response.headers().add(HttpHeaders.VARY, "Accept-Encoding")
         }
