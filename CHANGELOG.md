@@ -8,13 +8,15 @@ version is tagged.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-20
+
+GitHub-only release (no Maven Central — secrets not configured; see `docs/RELEASE.md` Path A).
+
 ### Added
 - Enable **native gRPC** (`PROTOCOL_GRPC`, proto) in the conformance matrix on h2c
   (exclude gRPC×JSON; known-fail unexpected-request mapping; known-flaky Vert.x padded
   `grpc-status-details-bin` on Errors/Duplicate Metadata)
-
-### Changed
-- Development continues on `0.1.4-SNAPSHOT` after the `0.1.3` GitHub release
+- Conformance matrix **~1514 pass** (+ native gRPC proto on h2c)
 
 ## [0.1.3] - 2026-10-20
 
@@ -72,7 +74,8 @@ First public GitHub release (no Maven Central — secrets not configured; see `d
 - JSON codec registers protobuf `Any` types from the message file descriptor (needed for conformance payloads)
 - GitHub-only release packaging script (`scripts/package-github-release.sh`)
 
-[Unreleased]: https://github.com/lldata/quarkus-connect/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/lldata/quarkus-connect/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.4
 [0.1.3]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.3
 [0.1.2]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.2
 [0.1.1]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.1
