@@ -20,6 +20,7 @@ out/
 
 # Local
 dependency-reduced-pom.xml
+.cache/
 
 # Flutter example
 examples/flutter-web-client/.dart_tool/
