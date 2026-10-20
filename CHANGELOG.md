@@ -11,6 +11,10 @@ version is tagged.
 ### Changed
 - Development continues on `0.1.2-SNAPSHOT` after the `0.1.1` GitHub release
 
+### Fixed
+- Enable **HTTP/2 cleartext (h2c)** in the conformance matrix for Connect (`supportsH2c`; gRPC-Web×H2 excluded pending quarkus-grpc port interaction)
+- Conformance matrix **1018/1018** (Connect H1+H2 + gRPC-Web H1)
+
 ## [0.1.1] - 2026-10-20
 
 GitHub-only release (no Maven Central — secrets not configured; see `docs/RELEASE.md` Path A).

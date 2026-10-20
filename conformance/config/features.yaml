@@ -1,9 +1,11 @@
 # Feature matrix for quarkus-connect ConformanceService host.
-# Skips TLS, H2C, message-receive limits, native gRPC, and full-duplex bidi (buffered path).
+# Skips TLS, message-receive limits, native gRPC, full-duplex bidi (buffered path),
+# and gRPC-Web over HTTP/2 (see exclude_cases).
 # See docs/INTEROP.md for the skip rationale and known-failing patterns.
 features:
   versions:
     - HTTP_VERSION_1
+    - HTTP_VERSION_2
   protocols:
     - PROTOCOL_CONNECT
     - PROTOCOL_GRPC_WEB
@@ -18,10 +20,17 @@ features:
     - STREAM_TYPE_CLIENT_STREAM
     - STREAM_TYPE_SERVER_STREAM
     - STREAM_TYPE_HALF_DUPLEX_BIDI_STREAM
-  supportsH2c: false
+  supportsH2c: true
   supportsTls: false
   supportsTlsClientCerts: false
   supportsTrailers: true
   supportsHalfDuplexBidiOverHttp1: true
   supportsConnectGet: true
   supportsMessageReceiveLimit: false
+
+# gRPC-Web over h2c currently fails against the shared Vert.x + quarkus-grpc port
+# (HTTP/2 GOAWAY PROTOCOL_ERROR / response Content-Type application/grpc).
+# Connect over h2c is green; keep gRPC-Web on HTTP/1 until that interaction is fixed.
+exclude_cases:
+  - version: HTTP_VERSION_2
+    protocol: PROTOCOL_GRPC_WEB
