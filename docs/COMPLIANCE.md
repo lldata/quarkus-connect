@@ -19,7 +19,7 @@ in-repo so external users see the same floor.
 | Bidi streaming over Connect | **Yes** | `@GrpcService` `BIDI_STREAMING`; buffered request body (vertical slice) |
 | gRPC-Web unary + streaming | **Yes** | `+proto` / `+json`; gzip frames; H1 + H2 h2c conformance green |
 | HTTP/2 cleartext (h2c) | **Yes** | Connect + gRPC-Web + native gRPC (proto) in conformance |
-| Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false`; conformance `PROTOCOL_GRPC` (proto; JSON excluded). Error-detail trailers still padded by Vert.x `Utils.writeMetadata` (known-failing) |
+| Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false`; conformance `PROTOCOL_GRPC` (proto; JSON excluded). Error-detail trailers still padded by Vert.x `Utils.writeMetadata` (known-flaky) |
 | Interceptors on Connect | **Yes** | `@GlobalInterceptor` via bridge |
 | Quarkus Connect *client* | **Out of scope** | |
 

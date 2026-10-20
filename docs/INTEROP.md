@@ -46,14 +46,16 @@ gRPC-Web on h2c is claimed by quarkus-connect at a route order before quarkus-gr
 quarkus-grpc's `isGrpc` matches `^application/grpc.*` on HTTP/2, which would otherwise
 steal `application/grpc-web*` and answer with native `application/grpc`.
 
-### Known-failing (`conformance/config/known-failing.txt`)
+### Known-failing / known-flaky
 
-Patterns that still fail and **must** keep failing for CI to stay green.
-As of native gRPC enablement: **1514 pass / 88 known-failing** (Vert.x padded
-`grpc-status-details-bin` on Errors/Duplicate Metadata; quarkus-grpc unexpected-request
-mapping). See comments in `known-failing.txt`.
+- `known-failing.txt` — must fail (quarkus-grpc unexpected-request mapping for native gRPC)
+- `known-flaky.txt` — may pass or fail (Vert.x padded `grpc-status-details-bin` on
+  Errors/Duplicate Metadata for `PROTOCOL_GRPC`)
 
-Remove entries from `known-failing.txt` when a case starts passing — the runner requires known-failing cases to fail.
+As of native gRPC enablement: **~1514 pass** with 10 known-failing + flaky padding suite.
+See comments in the config files.
+
+Remove a known-failing entry when it starts passing — the runner requires those cases to fail.
 
 ## Streaming cancel / timeout notes
 
