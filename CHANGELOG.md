@@ -9,7 +9,11 @@ version is tagged.
 ## [Unreleased]
 
 ### Changed
-- Development continues on `0.1.2-SNAPSHOT` after the `0.1.1` GitHub release
+- Development continues on `0.1.3-SNAPSHOT` after the `0.1.2` GitHub release
+
+## [0.1.2] - 2026-10-20
+
+GitHub-only release (no Maven Central — secrets not configured; see `docs/RELEASE.md` Path A).
 
 ### Fixed
 - Enable **HTTP/2 cleartext (h2c)** in the conformance matrix for Connect (`supportsH2c`; gRPC-Web×H2 excluded pending quarkus-grpc port interaction)
@@ -53,6 +57,7 @@ First public GitHub release (no Maven Central — secrets not configured; see `d
 - JSON codec registers protobuf `Any` types from the message file descriptor (needed for conformance payloads)
 - GitHub-only release packaging script (`scripts/package-github-release.sh`)
 
-[Unreleased]: https://github.com/lldata/quarkus-connect/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/lldata/quarkus-connect/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.2
 [0.1.1]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.1
 [0.1.0]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.0
