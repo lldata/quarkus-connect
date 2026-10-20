@@ -8,7 +8,15 @@ cd "$ROOT"
   -Dquarkus.package.jar.type=uber-jar \
   --quiet
 
-JAR="$ROOT/examples/quarkus-kotlin-server/build/quarkus-kotlin-server-999-SNAPSHOT-runner.jar"
+VERSION="$(sed -n 's/^version=//p' gradle.properties)"
+JAR="$ROOT/examples/quarkus-kotlin-server/build/quarkus-kotlin-server-${VERSION}-runner.jar"
+if [[ ! -f "$JAR" ]]; then
+  JAR="$(ls -1 "$ROOT"/examples/quarkus-kotlin-server/build/*-runner.jar 2>/dev/null | head -n1 || true)"
+fi
+if [[ -z "${JAR}" || ! -f "$JAR" ]]; then
+  echo "Missing example uber-jar after quarkusBuild" >&2
+  exit 1
+fi
 LOG="$ROOT/examples/quarkus-kotlin-server/build/interop-server.log"
 mkdir -p "$(dirname "$LOG")"
 
@@ -20,7 +28,7 @@ trap cleanup EXIT
 BASE=http://127.0.0.1:8080
 for i in $(seq 1 60); do
   if ! kill -0 "$PID" 2>/dev/null; then
-    echo "server died:"
+    echo "server died (jar=$JAR):"
     tail -n 80 "$LOG" || true
     exit 1
   fi

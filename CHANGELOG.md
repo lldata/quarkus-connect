@@ -8,6 +8,10 @@ version is tagged.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-20
+
+First public GitHub release (no Maven Central — secrets not configured; see `docs/RELEASE.md` Path A).
+
 ### Added
 - Connect unary + server streaming + gRPC-Web for ordinary `@GrpcService` beans on one HTTP port
 - Chunked media upload example, Flutter web client, OTel interceptor example
@@ -24,7 +28,7 @@ version is tagged.
 - Curl interop matrix (`scripts/interop-matrix.sh` + Gradle `interopMatrix` in `check`) and streaming cancel/`connect-timeout-ms` hardening
 - Thin `conformance/` ConformanceService host + `connectconformance` suite in `check` (partial matrix; known-failing documented)
 - JSON codec registers protobuf `Any` types from the message file descriptor (needed for conformance payloads)
+- GitHub-only release packaging script (`scripts/package-github-release.sh`)
 
-### Notes
-- Version remains `999-SNAPSHOT` until a human bumps to **`0.1.0`** (or similar) and tags; see `docs/RELEASE.md`
-- Without Central secrets: `./scripts/package-github-release.sh 0.1.0` stages jars + notes for a GitHub-only release
+[Unreleased]: https://github.com/lldata/quarkus-connect/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/lldata/quarkus-connect/releases/tag/v0.1.0

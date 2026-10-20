@@ -30,7 +30,7 @@ Kotlin-first runtime with a Java-friendly SPI ([docs/SPI.md](docs/SPI.md)).
 ## Coordinates
 
 ```kotlin
-implementation("io.github.lldata:quarkus-connect:999-SNAPSHOT")
+implementation("io.github.lldata:quarkus-connect:0.1.0")
 ```
 
 ## Quick start
