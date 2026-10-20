@@ -1,0 +1,7 @@
+# Flaky native gRPC cases: Vert.x Utils.writeMetadata uses Base64.getEncoder()
+# (padded) for *-bin trailers; conformance wants unpadded grpc-status-details-bin.
+# Padding is not deterministic across runners, so these may pass or fail.
+# Broad patterns are OK for --known-flaky (passing is allowed).
+
+Errors/**/Protocol:PROTOCOL_GRPC/**
+Duplicate Metadata/**/Protocol:PROTOCOL_GRPC/**

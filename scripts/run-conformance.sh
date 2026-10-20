@@ -52,6 +52,7 @@ fi
 
 CONF="$ROOT/conformance/config/features.yaml"
 KNOWN="$ROOT/conformance/config/known-failing.txt"
+FLAKY="$ROOT/conformance/config/known-flaky.txt"
 
 echo "Using connectconformance: $BIN" >&2
 echo "Using server jar: $JAR" >&2
@@ -61,6 +62,7 @@ exec "$BIN" \
   --mode server \
   --conf "$CONF" \
   --known-failing "@${KNOWN}" \
+  --known-flaky "@${FLAKY}" \
   --max-servers 1 \
   -- \
   java -jar "$JAR"
