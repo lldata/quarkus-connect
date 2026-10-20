@@ -39,8 +39,8 @@ You can still:
 
 | Ready | Item |
 | --- | --- |
-| Yes | Unary Connect + gRPC-Web + server/client streaming for `@GrpcService` |
+| Yes | Unary Connect + gRPC-Web + server/client/bidi streaming for `@GrpcService` |
 | Yes | Examples + Flutter client + SPI docs |
 | Yes | Publish plugin + fail-closed workflow |
 | Human | Repository secrets + Claude Code app (optional for agent automation) |
-| Later | Client/bidi streaming over Connect |
+| Later | Interactive/chunked stream bodies; brotli/zstd message coding |

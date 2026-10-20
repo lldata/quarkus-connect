@@ -11,7 +11,8 @@ import java.util.zip.GZIPOutputStream
  * Connect content coding for unary (HTTP `Content-Encoding` / `Accept-Encoding`) and
  * streaming (`connect-content-encoding` / `connect-accept-encoding`).
  *
- * v1 supports **identity** and **gzip**. Other codings return `unimplemented`.
+ * v1 supports **identity** and **gzip**. Other codings (including `br`) return
+ * `unimplemented` — see `docs/COMPLIANCE.md` for why brotli is deferred.
  */
 object ConnectCompression {
 

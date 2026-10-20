@@ -93,6 +93,15 @@ class GreetGrpcService : MutinyGreetServiceGrpc.GreetServiceImplBase() {
                 .build()
         }
 
+    override fun chatGreetings(requests: Multi<GreetRequest>): Multi<GreetResponse> =
+        requests.onItem().transform { req ->
+            val name = req.name.trim().ifEmpty { "friend" }
+            GreetResponse.newBuilder()
+                .setGreeting("Chat: Hello, $name!")
+                .setRequestId(req.requestId)
+                .build()
+        }
+
     private fun statusFor(code: String): Status = when (code.trim().lowercase()) {
         "invalid_argument" -> Status.INVALID_ARGUMENT
         "not_found" -> Status.NOT_FOUND

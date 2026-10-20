@@ -16,7 +16,7 @@ in-repo so external users see the same floor.
 | Accept-Encoding advertisement | **Yes** | Unary `Accept-Encoding: gzip, identity`; streaming `connect-accept-encoding: gzip, identity` |
 | Server streaming `application/connect+*` | **Yes** | End-stream envelope on completion/error; unsupported stream encoding → end-stream `unimplemented` |
 | Client streaming over Connect | **Yes** | `@GrpcService` `CLIENT_STREAMING`; buffered request body (vertical slice) |
-| Bidi streaming over Connect | **No** | Clear `unimplemented`; native gRPC still serves them |
+| Bidi streaming over Connect | **Yes** | `@GrpcService` `BIDI_STREAMING`; buffered request body (vertical slice) |
 | gRPC-Web unary | **Yes** | `+proto` (and `+json` codec path) |
 | Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false` |
 | Interceptors on Connect | **Yes** | `@GlobalInterceptor` via bridge |
@@ -35,8 +35,9 @@ in-repo so external users see the same floor.
 
 ## Deliberately later / human
 
-- Connect bidi streaming
-- Streaming request body without full buffering (large client streams)
-- Additional compressors (br, zstd)
+- Streaming request body without full buffering (large client/bidi streams; interactive half-close)
+- **Brotli (`br`) / zstd** — deferred: JDK has no brotli API; portable codecs need native libs
+  (e.g. brotli4j + platform classifiers), which is a poor fit for a Central-published extension.
+  Prefer edge/Quarkus HTTP `br` for whole responses; Connect message coding stays `gzip` + `identity`.
 - Maven Central secrets + first tagged release (`docs/RELEASE.md`)
 - Server-side ffmpeg thumbnails
