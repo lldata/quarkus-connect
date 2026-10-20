@@ -7,6 +7,9 @@ enum class WireProtocol {
     /** Connect unary (`application/proto` or `application/json`). */
     CONNECT,
 
+    /** Connect server streaming (`application/connect+proto` or `+json`). */
+    CONNECT_STREAM,
+
     /** gRPC-Web unary (`application/grpc-web`, `application/grpc-web+proto`, `+json`). */
     GRPC_WEB,
 
