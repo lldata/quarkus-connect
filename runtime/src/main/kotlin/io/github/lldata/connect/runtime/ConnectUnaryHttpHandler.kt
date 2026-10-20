@@ -246,8 +246,14 @@ class ConnectUnaryHttpHandler(
     ) {
         val params = ctx.queryParams()
         val connectVersion = params.get("connect")
-        if (connectVersion != null && connectVersion != ConnectProtocolConstants.PROTOCOL_VERSION) {
-            writeConnectError(ctx, ConnectException.invalidArgument("Unsupported connect query version: $connectVersion"))
+        if (!ConnectProtocolConstants.isSupportedGetConnectVersion(connectVersion)) {
+            writeConnectError(
+                ctx,
+                ConnectException.invalidArgument(
+                    "Unsupported connect query version: $connectVersion (expected ${ConnectProtocolConstants.PROTOCOL_VERSION_GET})",
+                ),
+                varyAcceptEncoding = true,
+            )
             return
         }
 
@@ -257,25 +263,42 @@ class ConnectUnaryHttpHandler(
             writeConnectError(
                 ctx,
                 ConnectException(ConnectCode.UNIMPLEMENTED, "Unsupported compression '$compression'; supported: identity"),
+                varyAcceptEncoding = true,
             )
             return
         }
 
         val messageParam = params.get("message") ?: ""
-        val useBase64 = params.contains("base64")
+        // Spec: Base64-Query → "base64=1" (URL-safe base64, typically unpadded for proto).
+        val useBase64 = params.get("base64") == "1" || params.get("base64").equals("true", ignoreCase = true)
         val body = try {
             if (useBase64) {
-                java.util.Base64.getUrlDecoder().decode(messageParam.replace(' ', '+'))
+                val normalized = messageParam.replace(' ', '+')
+                java.util.Base64.getUrlDecoder().decode(normalized)
             } else {
                 messageParam.toByteArray(StandardCharsets.UTF_8)
             }
         } catch (e: IllegalArgumentException) {
-            writeConnectError(ctx, ConnectException.invalidArgument("Invalid base64 message: ${e.message}"))
+            writeConnectError(
+                ctx,
+                ConnectException.invalidArgument("Invalid base64 message: ${e.message}"),
+                varyAcceptEncoding = true,
+            )
             return
         }
 
         val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
-        invokeAsync(ctx, procedure, method, codec, collectHeaders(ctx), timeoutMs, body, WireProtocol.CONNECT)
+        invokeAsync(
+            ctx,
+            procedure,
+            method,
+            codec,
+            collectHeaders(ctx),
+            timeoutMs,
+            body,
+            WireProtocol.CONNECT,
+            varyAcceptEncoding = true,
+        )
     }
 
     private fun handleGrpcWebPost(
@@ -306,6 +329,7 @@ class ConnectUnaryHttpHandler(
         body: ByteArray,
         wire: WireProtocol,
         grpcWebContentType: String? = null,
+        varyAcceptEncoding: Boolean = false,
     ) {
         val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs)
         val future = ctx.vertx().executeBlocking(
@@ -321,14 +345,20 @@ class ConnectUnaryHttpHandler(
         future.onComplete { ar ->
             if (ar.succeeded()) {
                 when (wire) {
-                    WireProtocol.CONNECT -> writeConnectSuccess(ctx, codec, callContext, ar.result())
+                    WireProtocol.CONNECT -> writeConnectSuccess(
+                        ctx,
+                        codec,
+                        callContext,
+                        ar.result(),
+                        varyAcceptEncoding,
+                    )
                     WireProtocol.GRPC_WEB -> writeGrpcWebSuccess(ctx, callContext, ar.result(), grpcWebContentType)
                     WireProtocol.CONNECT_STREAM, WireProtocol.GRPC_NATIVE -> Unit
                 }
             } else {
                 val error = GrpcStatusMapping.toConnectException(ar.cause())
                 when (wire) {
-                    WireProtocol.CONNECT -> writeConnectError(ctx, error, callContext)
+                    WireProtocol.CONNECT -> writeConnectError(ctx, error, callContext, varyAcceptEncoding)
                     WireProtocol.GRPC_WEB -> writeGrpcWebError(ctx, error, grpcWebContentType, callContext)
                     WireProtocol.CONNECT_STREAM, WireProtocol.GRPC_NATIVE -> Unit
                 }
@@ -341,9 +371,13 @@ class ConnectUnaryHttpHandler(
         codec: ConnectCodec,
         callContext: DefaultConnectCallContext,
         responseBytes: ByteArray,
+        varyAcceptEncoding: Boolean = false,
     ) {
         val response = ctx.response().setStatusCode(200)
         response.putHeader(HttpHeaders.CONTENT_TYPE, codec.contentType)
+        if (varyAcceptEncoding) {
+            response.headers().add(HttpHeaders.VARY, "Accept-Encoding")
+        }
         writeMetadata(response, callContext)
         response.end(io.vertx.core.buffer.Buffer.buffer(responseBytes))
     }
@@ -352,6 +386,7 @@ class ConnectUnaryHttpHandler(
         ctx: RoutingContext,
         error: ConnectException,
         callContext: DefaultConnectCallContext? = null,
+        varyAcceptEncoding: Boolean = false,
     ) {
         if (ctx.response().headWritten()) {
             log.warn("Cannot write Connect error; response already started: ${error.code.wireName}")
@@ -359,6 +394,9 @@ class ConnectUnaryHttpHandler(
         }
         val response = ctx.response().setStatusCode(error.code.httpStatus)
         response.putHeader(HttpHeaders.CONTENT_TYPE, ConnectProtocolConstants.CONTENT_TYPE_JSON)
+        if (varyAcceptEncoding) {
+            response.headers().add(HttpHeaders.VARY, "Accept-Encoding")
+        }
         if (callContext != null) {
             writeMetadata(response, callContext)
         }

@@ -52,6 +52,10 @@ curl -sS -i -X POST http://localhost:8080/demo.v1.DemoService/Echo \
   -H 'connect-protocol-version: 1' \
   -H 'Authorization: Bearer demo-user' \
   -d '{"message":""}'
+
+# GET unary (Connect query uses connect=v1)
+curl -sS 'http://localhost:8080/demo.v1.DemoService/Echo?connect=v1&encoding=json&message=%7B%22message%22%3A%22hi%22%2C%22clientSeq%22%3A%221%22%7D' \
+  -H 'Authorization: Bearer demo-user'
 ```
 
 Tokens: `demo-user` (full access), `demo-guest` (Echo only).
