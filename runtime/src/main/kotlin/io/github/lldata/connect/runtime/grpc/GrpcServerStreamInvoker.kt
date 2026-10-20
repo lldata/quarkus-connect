@@ -1,5 +1,6 @@
 package io.github.lldata.connect.runtime.grpc
 
+import io.github.lldata.connect.runtime.StreamCallControl
 import io.github.lldata.connect.spi.ConnectCallContext
 import io.github.lldata.connect.spi.ConnectException
 import io.github.lldata.connect.spi.ConnectStreamObserver
@@ -33,6 +34,7 @@ object GrpcServerStreamInvoker {
         request: ReqT,
         context: ConnectCallContext,
         observer: ConnectStreamObserver<RespT>,
+        callControl: StreamCallControl? = null,
     ) {
         val definition = if (interceptors.isEmpty()) {
             ServerServiceDefinition.builder("connect-stream-bridge")
@@ -50,7 +52,7 @@ object GrpcServerStreamInvoker {
 
         @Suppress("UNCHECKED_CAST")
         val typed = definition as ServerMethodDefinition<ReqT, RespT>
-        invokeHandler(typed.methodDescriptor, typed.serverCallHandler, request, context, observer)
+        invokeHandler(typed.methodDescriptor, typed.serverCallHandler, request, context, observer, callControl)
     }
 
     private fun <ReqT, RespT> invokeHandler(
@@ -59,9 +61,11 @@ object GrpcServerStreamInvoker {
         request: ReqT,
         context: ConnectCallContext,
         observer: ConnectStreamObserver<RespT>,
+        callControl: StreamCallControl?,
     ) {
         val timeoutMs = context.timeoutMs ?: 60_000L
         val deadlineCtx = Context.current().withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS, DEADLINE_SCHEDULER)
+        callControl?.attachGrpcCancel { deadlineCtx.cancel(Status.CANCELLED.asRuntimeException()) }
         val previous = deadlineCtx.attach()
         val finished = AtomicBoolean(false)
 
@@ -79,7 +83,7 @@ object GrpcServerStreamInvoker {
             }
 
             override fun sendMessage(message: RespT) {
-                if (!finished.get()) {
+                if (!finished.get() && callControl?.isCancelled() != true) {
                     observer.onNext(message)
                 }
             }
@@ -87,7 +91,14 @@ object GrpcServerStreamInvoker {
             override fun close(status: Status, trailers: Metadata) {
                 if (!finished.compareAndSet(false, true)) return
                 try {
-                    if (status.isOk) {
+                    if (callControl?.isCancelled() == true) {
+                        observer.onError(
+                            ConnectException(
+                                io.github.lldata.connect.spi.ConnectCode.CANCELED,
+                                "Client cancelled the stream",
+                            ),
+                        )
+                    } else if (status.isOk) {
                         observer.onCompleted()
                     } else {
                         observer.onError(GrpcStatusMapping.toConnectException(status.asRuntimeException(trailers)))
@@ -98,7 +109,8 @@ object GrpcServerStreamInvoker {
                 }
             }
 
-            override fun isCancelled(): Boolean = deadlineCtx.isCancelled || finished.get()
+            override fun isCancelled(): Boolean =
+                deadlineCtx.isCancelled || finished.get() || callControl?.isCancelled() == true
 
             override fun getMethodDescriptor(): MethodDescriptor<ReqT, RespT> = descriptor
         }

@@ -38,3 +38,19 @@ dependencies {
     // Enables quarkus.otel.traces.exporter=logging in tests (CI without OTLP collector).
     testImplementation("io.opentelemetry:opentelemetry-exporter-logging")
 }
+
+/**
+ * Black-box Connect curl matrix against this example's uber-jar.
+ * Wired into `check` so CI (`./gradlew check`) covers live interop without a separate workflow.
+ */
+tasks.register<Exec>("interopMatrix") {
+    group = "verification"
+    description = "Build example uber-jar and run scripts/run-interop-matrix.sh"
+    dependsOn(":quarkus-connect:jar")
+    workingDir = rootProject.projectDir
+    commandLine("bash", "scripts/run-interop-matrix.sh")
+}
+
+tasks.named("check") {
+    dependsOn("interopMatrix")
+}

@@ -165,7 +165,12 @@ class ConnectUnaryHttpHandler(
 
         val codec = ConnectCodec.fromWireName(ConnectEnvelope.codecWireName(contentType))
             ?: ConnectCodec.PROTO
-        val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val timeoutMs = try {
+            parseConnectTimeoutMs(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        } catch (e: ConnectException) {
+            writeConnectStreamError(ctx, e, contentType, responseEncoding)
+            return
+        }
         val headers = collectHeaders(ctx)
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
 
@@ -176,7 +181,9 @@ class ConnectUnaryHttpHandler(
             return
         }
 
-        val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs)
+        val callControl = StreamCallControl()
+        val clientGone = AtomicBoolean(false)
+        val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs, callControl)
         val responseCt = ConnectEnvelope.normalizeContentType(contentType)
         val response = ctx.response()
             .setStatusCode(200)
@@ -188,10 +195,18 @@ class ConnectUnaryHttpHandler(
         response.setChunked(true)
 
         val finished = AtomicBoolean(false)
+        fun markClientGone() {
+            clientGone.set(true)
+            callControl.cancelFromClient()
+        }
+        response.closeHandler { markClientGone() }
+        response.exceptionHandler { markClientGone() }
+
+        var timeoutTimerId = -1L
 
         fun writeEnvelope(bytes: ByteArray) {
             ctx.vertx().runOnContext {
-                if (!response.ended()) {
+                if (!response.ended() && !clientGone.get()) {
                     response.write(io.vertx.core.buffer.Buffer.buffer(bytes))
                 }
             }
@@ -199,12 +214,28 @@ class ConnectUnaryHttpHandler(
 
         fun endWith(error: ConnectException?) {
             if (!finished.compareAndSet(false, true)) return
+            if (timeoutTimerId >= 0) {
+                ctx.vertx().cancelTimer(timeoutTimerId)
+            }
+            if (clientGone.get()) return
             // End-stream envelopes stay uncompressed (small JSON); compressed bit left unset.
             val end = ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers())
             ctx.vertx().runOnContext {
                 if (!response.ended()) {
                     response.end(io.vertx.core.buffer.Buffer.buffer(end))
                 }
+            }
+        }
+
+        if (timeoutMs != null) {
+            timeoutTimerId = ctx.vertx().setTimer(timeoutMs) {
+                callControl.cancelFromClient()
+                endWith(
+                    ConnectException(
+                        ConnectCode.DEADLINE_EXCEEDED,
+                        "RPC timed out after ${timeoutMs}ms",
+                    ),
+                )
             }
         }
 
@@ -232,12 +263,8 @@ class ConnectUnaryHttpHandler(
             },
             false,
         ).onComplete { ar ->
-            if (ar.failed() && finished.compareAndSet(false, true)) {
-                val error = GrpcStatusMapping.toConnectException(ar.cause())
-                val end = ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers())
-                if (!response.ended()) {
-                    response.end(io.vertx.core.buffer.Buffer.buffer(end))
-                }
+            if (ar.failed() && !clientGone.get()) {
+                endWith(GrpcStatusMapping.toConnectException(ar.cause()))
             }
         }
     }
@@ -275,7 +302,12 @@ class ConnectUnaryHttpHandler(
 
         val codec = ConnectCodec.fromWireName(ConnectEnvelope.codecWireName(contentType))
             ?: ConnectCodec.PROTO
-        val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val timeoutMs = try {
+            parseConnectTimeoutMs(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        } catch (e: ConnectException) {
+            writeConnectStreamError(ctx, e, contentType, responseEncoding)
+            return
+        }
         val headers = collectHeaders(ctx)
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
 
@@ -354,7 +386,12 @@ class ConnectUnaryHttpHandler(
 
         val codec = ConnectCodec.fromWireName(ConnectEnvelope.codecWireName(contentType))
             ?: ConnectCodec.PROTO
-        val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val timeoutMs = try {
+            parseConnectTimeoutMs(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        } catch (e: ConnectException) {
+            writeConnectStreamError(ctx, e, contentType, responseEncoding)
+            return
+        }
         val headers = collectHeaders(ctx)
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
 
@@ -365,7 +402,9 @@ class ConnectUnaryHttpHandler(
             return
         }
 
-        val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs)
+        val callControl = StreamCallControl()
+        val clientGone = AtomicBoolean(false)
+        val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs, callControl)
         val responseCt = ConnectEnvelope.normalizeContentType(contentType)
         val response = ctx.response()
             .setStatusCode(200)
@@ -377,10 +416,18 @@ class ConnectUnaryHttpHandler(
         response.setChunked(true)
 
         val finished = AtomicBoolean(false)
+        fun markClientGone() {
+            clientGone.set(true)
+            callControl.cancelFromClient()
+        }
+        response.closeHandler { markClientGone() }
+        response.exceptionHandler { markClientGone() }
+
+        var timeoutTimerId = -1L
 
         fun writeEnvelope(bytes: ByteArray) {
             ctx.vertx().runOnContext {
-                if (!response.ended()) {
+                if (!response.ended() && !clientGone.get()) {
                     response.write(io.vertx.core.buffer.Buffer.buffer(bytes))
                 }
             }
@@ -388,11 +435,27 @@ class ConnectUnaryHttpHandler(
 
         fun endWith(error: ConnectException?) {
             if (!finished.compareAndSet(false, true)) return
+            if (timeoutTimerId >= 0) {
+                ctx.vertx().cancelTimer(timeoutTimerId)
+            }
+            if (clientGone.get()) return
             val end = ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers())
             ctx.vertx().runOnContext {
                 if (!response.ended()) {
                     response.end(io.vertx.core.buffer.Buffer.buffer(end))
                 }
+            }
+        }
+
+        if (timeoutMs != null) {
+            timeoutTimerId = ctx.vertx().setTimer(timeoutMs) {
+                callControl.cancelFromClient()
+                endWith(
+                    ConnectException(
+                        ConnectCode.DEADLINE_EXCEEDED,
+                        "RPC timed out after ${timeoutMs}ms",
+                    ),
+                )
             }
         }
 
@@ -420,12 +483,8 @@ class ConnectUnaryHttpHandler(
             },
             false,
         ).onComplete { ar ->
-            if (ar.failed() && finished.compareAndSet(false, true)) {
-                val error = GrpcStatusMapping.toConnectException(ar.cause())
-                val end = ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers())
-                if (!response.ended()) {
-                    response.end(io.vertx.core.buffer.Buffer.buffer(end))
-                }
+            if (ar.failed() && !clientGone.get()) {
+                endWith(GrpcStatusMapping.toConnectException(ar.cause()))
             }
         }
     }
@@ -487,7 +546,12 @@ class ConnectUnaryHttpHandler(
             requestEncoding,
         )
 
-        val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val timeoutMs = try {
+            parseConnectTimeoutMs(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        } catch (e: ConnectException) {
+            writeConnectError(ctx, e)
+            return
+        }
         val headers = collectHeaders(ctx)
         val rawBody = ctx.body().buffer()?.bytes ?: ByteArray(0)
         val body = try {
@@ -587,7 +651,12 @@ class ConnectUnaryHttpHandler(
             return
         }
 
-        val timeoutMs = parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        val timeoutMs = try {
+            parseConnectTimeoutMs(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
+        } catch (e: ConnectException) {
+            writeConnectError(ctx, e, varyAcceptEncoding = true)
+            return
+        }
         invokeAsync(
             ctx,
             procedure,
@@ -792,9 +861,29 @@ class ConnectUnaryHttpHandler(
         return map
     }
 
+    /**
+     * Connect `connect-timeout-ms`: positive integer, at most 10 ASCII digits (protocol ABNF).
+     * Omitted → null (no deadline from the Connect header).
+     */
+    private fun parseConnectTimeoutMs(raw: String?): Long? {
+        if (raw.isNullOrBlank()) return null
+        if (raw.length > 10 || raw.any { !it.isDigit() }) {
+            throw ConnectException.invalidArgument(
+                "Invalid connect-timeout-ms '$raw' (positive integer, at most 10 digits)",
+            )
+        }
+        val ms = raw.toLong()
+        if (ms <= 0L) {
+            throw ConnectException.invalidArgument(
+                "Invalid connect-timeout-ms '$raw' (must be positive)",
+            )
+        }
+        return ms
+    }
+
+    /** gRPC-Web `grpc-timeout` (units) or legacy millisecond strings. */
     private fun parseTimeout(raw: String?): Long? {
         if (raw.isNullOrBlank()) return null
-        // grpc-timeout uses units (e.g. 10S); connect-timeout-ms is milliseconds.
         val msMatch = raw.toLongOrNull()
         if (msMatch != null) return msMatch.takeIf { it > 0 }
         val unit = raw.lastOrNull() ?: return null

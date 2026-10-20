@@ -369,6 +369,90 @@ class GreetConnectTest {
     }
 
     @Test
+    fun `invalid connect-timeout-ms returns invalid_argument`() {
+        given()
+            .header("Content-Type", "application/json")
+            .header("connect-protocol-version", "1")
+            .header("connect-timeout-ms", "nope")
+            .header("Authorization", auth)
+            .body("""{"name":"Buf"}""")
+            .`when`()
+            .post("/greet.v1.GreetService/Greet")
+            .then()
+            .statusCode(400)
+            .body("code", equalTo("invalid_argument"))
+            .body("message", org.hamcrest.Matchers.containsString("connect-timeout-ms"))
+    }
+
+    @Test
+    fun `server-stream connect-timeout-ms yields end-stream deadline_exceeded`() {
+        val json = """{"name":"Stream"}""".toByteArray()
+        val req = connectEnvelope(json, compressedFlag = false)
+
+        val raw = given()
+            .header("Content-Type", "application/connect+json")
+            .header("connect-protocol-version", "1")
+            .header("connect-timeout-ms", "1")
+            .header("connect-accept-encoding", "identity")
+            .header("Authorization", auth)
+            .body(req)
+            .`when`()
+            .post("/greet.v1.GreetService/StreamGreetings")
+            .then()
+            .statusCode(200)
+            .extract()
+            .asByteArray()
+
+        // Expect end-stream with deadline_exceeded (may arrive after zero or more data frames).
+        var sawDeadline = false
+        var offset = 0
+        while (offset + 5 <= raw.size) {
+            val flag = raw[offset].toInt() and 0xff
+            val len = ByteBuffer.wrap(raw, offset + 1, 4).int
+            val payload = String(raw, offset + 5, len)
+            offset += 5 + len
+            if (flag and 0x02 != 0 && payload.contains("deadline_exceeded")) {
+                sawDeadline = true
+            }
+        }
+        assertTrue(sawDeadline, "expected deadline_exceeded end-stream, got ${String(raw)}")
+    }
+
+    @Test
+    fun `empty client-stream half-close returns greeting for nobody`() {
+        val raw = given()
+            .header("Content-Type", "application/connect+json")
+            .header("connect-protocol-version", "1")
+            .header("connect-accept-encoding", "identity")
+            .header("Authorization", auth)
+            .body(ByteArray(0))
+            .`when`()
+            .post("/greet.v1.GreetService/CollectGreetings")
+            .then()
+            .statusCode(200)
+            .extract()
+            .asByteArray()
+
+        val messages = mutableListOf<String>()
+        var offset = 0
+        var sawEnd = false
+        while (offset + 5 <= raw.size) {
+            val flag = raw[offset].toInt() and 0xff
+            val len = ByteBuffer.wrap(raw, offset + 1, 4).int
+            val payload = String(raw, offset + 5, len)
+            offset += 5 + len
+            if (flag and 0x02 != 0) {
+                sawEnd = true
+            } else {
+                messages += payload
+            }
+        }
+        assertTrue(sawEnd)
+        assertEquals(1, messages.size)
+        assertTrue(messages[0].contains("Hello, nobody!"), messages[0])
+    }
+
+    @Test
     fun `google rpc ErrorInfo details appear in Connect JSON`() {
         given()
             .header("Content-Type", "application/json")
