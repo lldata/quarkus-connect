@@ -43,11 +43,7 @@ Out of config (skipped entirely by the runner):
 ### Known-failing (`conformance/config/known-failing.txt`)
 
 Exact case names that still fail and **must** keep failing for CI to stay green.
-As of stream/error header flush: **358 pass / 6 known-failing** on the thin matrix.
-
-Remaining gaps:
-
-- Connect “unexpected request” edge codes (content-type / verb / empty stream → we map to `invalid_argument` / `unimplemented`; suite often expects `unknown` or different codes)
+As of unexpected-request status alignment: **364 pass / 0 known-failing** on the thin matrix.
 
 Remove entries from `known-failing.txt` when a case starts passing — the runner requires known-failing cases to fail.
 

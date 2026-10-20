@@ -1,10 +1,3 @@
 # Exact known-failing cases from connectconformance --mode server (thin features.yaml).
 # Cases listed here are required to fail; remove an entry when it starts passing.
-# Remaining: Connect/protocol unexpected-request edge codes (status mapping).
-
-Connect Unexpected Requests/HTTPVersion:1/TLS:false/server-stream/multiple-requests
-Connect Unexpected Requests/HTTPVersion:1/TLS:false/server-stream/no-request
-Connect Unexpected Requests/HTTPVersion:1/TLS:false/unexpected-codec
-Connect Unexpected Requests/HTTPVersion:1/TLS:false/unexpected-compressed-message
-Connect Unexpected Requests/HTTPVersion:1/TLS:false/unexpected-verb
-Unexpected Requests/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/TLS:false/unexpected-content-type
+# Thin matrix is currently fully green (364/364) — keep this file for future flakes.
