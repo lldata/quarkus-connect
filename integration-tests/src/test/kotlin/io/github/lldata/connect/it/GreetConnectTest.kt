@@ -168,6 +168,38 @@ class GreetConnectTest {
     }
 
     @Test
+    fun `GET unsupported compression returns unimplemented`() {
+        given()
+            .header("Authorization", auth)
+            .queryParam("connect", "v1")
+            .queryParam("encoding", "json")
+            .queryParam("compression", "gzip")
+            .queryParam("message", """{"name":"Get"}""")
+            .`when`()
+            .get("/greet.v1.GreetService/Greet")
+            .then()
+            .statusCode(501)
+            .body("code", equalTo("unimplemented"))
+            .body("message", org.hamcrest.Matchers.containsString("identity"))
+    }
+
+    @Test
+    fun `unary Content-Encoding gzip returns unimplemented`() {
+        given()
+            .header("Content-Type", "application/json")
+            .header("connect-protocol-version", "1")
+            .header("Content-Encoding", "gzip")
+            .header("Authorization", auth)
+            .body("""{"name":"Buf"}""")
+            .`when`()
+            .post("/greet.v1.GreetService/Greet")
+            .then()
+            .statusCode(501)
+            .body("code", equalTo("unimplemented"))
+            .body("message", org.hamcrest.Matchers.containsString("Content-Encoding"))
+    }
+
+    @Test
     fun `GET unary with URL-safe base64 proto message`() {
         val request = GreetRequest.newBuilder().setName("ProtoGet").setRequestId(9).build()
         val b64 = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(request.toByteArray())
@@ -346,6 +378,40 @@ class GreetConnectTest {
         assertEquals(3, messages.size)
         assertTrue(messages[0].contains("Hello #1, Stream!"))
         assertTrue(messages[2].contains("Hello #3, Stream!"))
+    }
+
+    @Test
+    fun `streaming connect-content-encoding gzip returns unimplemented end-stream`() {
+        val json = """{"name":"Stream"}""".toByteArray()
+        val req = ByteArray(5 + json.size)
+        req[0] = 0x00
+        req[1] = ((json.size ushr 24) and 0xff).toByte()
+        req[2] = ((json.size ushr 16) and 0xff).toByte()
+        req[3] = ((json.size ushr 8) and 0xff).toByte()
+        req[4] = (json.size and 0xff).toByte()
+        System.arraycopy(json, 0, req, 5, json.size)
+
+        val raw = given()
+            .header("Content-Type", "application/connect+json")
+            .header("connect-protocol-version", "1")
+            .header("connect-content-encoding", "gzip")
+            .header("Authorization", auth)
+            .body(req)
+            .`when`()
+            .post("/greet.v1.GreetService/StreamGreetings")
+            .then()
+            .statusCode(200)
+            .header("Content-Type", equalTo("application/connect+json"))
+            .header("connect-accept-encoding", equalTo("identity"))
+            .extract()
+            .asByteArray()
+
+        assertTrue(raw.size >= 5)
+        assertEquals(0x02, raw[0].toInt() and 0xff) // end-stream only
+        val len = ByteBuffer.wrap(raw, 1, 4).int
+        val payload = String(raw, 5, len)
+        assertTrue(payload.contains("\"unimplemented\""))
+        assertTrue(payload.contains("connect-content-encoding"))
     }
 
     @Test
