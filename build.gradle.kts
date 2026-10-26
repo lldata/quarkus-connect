@@ -162,3 +162,26 @@ published.forEach { mod ->
         }
     }
 }
+
+/**
+ * Avoid Quarkus SharedArchivePathTree / ZipCentralDirectory flakes in CI when
+ * `:integration-tests:test` (or security ITs) augments while `:conformance:quarkusBuild`
+ * rewrites the same runtime jar under Gradle parallel project execution.
+ */
+gradle.projectsEvaluated {
+    val itTest = findProject(":integration-tests")?.tasks?.findByName("test")
+    val secTest = findProject(":integration-tests-security")?.tasks?.findByName("test")
+    val confBuild = findProject(":conformance")?.tasks?.findByName("quarkusBuild")
+    val confSuite = findProject(":conformance")?.tasks?.findByName("conformanceSuite")
+    val exampleCheck = findProject(":examples:quarkus-kotlin-server")?.tasks?.findByName("check")
+    listOfNotNull(confBuild, confSuite).forEach { downstream ->
+        listOfNotNull(itTest, secTest).forEach { upstream ->
+            downstream.mustRunAfter(upstream)
+        }
+    }
+    if (exampleCheck != null) {
+        listOfNotNull(itTest, secTest).forEach { upstream ->
+            exampleCheck.mustRunAfter(upstream)
+        }
+    }
+}
