@@ -5,6 +5,8 @@ import io.github.lldata.connect.it.greet.v1.GreetResponse
 import io.quarkus.test.junit.QuarkusTest
 import io.restassured.RestAssured.given
 import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.hasKey
+import org.hamcrest.Matchers.not
 import org.hamcrest.Matchers.startsWith
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -33,7 +35,9 @@ class GreetConnectTest {
             .statusCode(200)
             .header("Content-Type", equalTo("application/json"))
             .body("greeting", equalTo("Hello, Buf!"))
+            // Default proto3 JSON names; see PreserveProtoFieldNamesTest for the opt-in.
             .body("requestId", equalTo("42"))
+            .body("$", not(hasKey("request_id")))
     }
 
     @Test

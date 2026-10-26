@@ -77,6 +77,18 @@ See **`examples/quarkus-kotlin-server`**, **`examples/flutter-web-client`**,
 | gRPC-Web | `application/grpc-web+proto` (framed) |
 | Native gRPC | `application/grpc` (handled by quarkus-grpc) |
 
+## Configuration
+
+Runtime properties (`application.properties` or environment variables):
+
+| Property | Default | Meaning |
+| --- | --- | --- |
+| `quarkus.connect.json.preserve-proto-field-names` | `false` | Print JSON responses with the proto field names (`request_id`) instead of the proto3 JSON lowerCamelCase names (`requestId`). Applies to Connect unary, Connect streaming and gRPC-Web `+json`. |
+
+JSON requests are parsed in either spelling whatever the setting. Leave the default unless your
+JSON contract is the proto field names: generated Connect clients (connect-es, Connect-Kotlin,
+connect-dart) expect lowerCamelCase. Fields with default values are always printed.
+
 ## Modules
 
 - `:quarkus-connect` (`runtime/`) — protocol + Vert.x routes + `@GrpcService` bridge

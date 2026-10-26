@@ -11,16 +11,21 @@ import io.github.lldata.connect.spi.ConnectException
 import java.nio.charset.StandardCharsets
 
 /**
- * Encode/decode protobuf [Message] values for unary Connect codecs.
+ * Encode/decode protobuf [Message] values for the Connect and gRPC-Web codecs.
+ *
+ * @param preserveProtoFieldNames print JSON with the proto field names (`request_id`) instead of
+ *   the proto3 JSON lowerCamelCase names (`requestId`). Parsing accepts both either way.
  */
-object ProtobufCodecSupport {
+class ProtobufCodecSupport(preserveProtoFieldNames: Boolean = false) {
 
     private val baseJsonParser: JsonFormat.Parser = JsonFormat.parser().ignoringUnknownFields()
+
     // Always print fields (including defaults) so clients see int64 "0" and bool false —
     // clearer for resume offsets and flags over Connect JSON.
     private val baseJsonPrinter: JsonFormat.Printer = JsonFormat.printer()
         .omittingInsignificantWhitespace()
         .includingDefaultValueFields()
+        .let { if (preserveProtoFieldNames) it.preservingProtoFieldNames() else it }
 
     fun <T : Message> parse(bytes: ByteArray, type: Class<T>, codec: ConnectCodec): T {
         return try {
