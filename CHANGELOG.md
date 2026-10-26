@@ -8,6 +8,10 @@ version is tagged.
 
 ## [Unreleased]
 
+### Added
+- `quarkus.connect.json.preserve-proto-field-names` (runtime, default `false`): print Connect /
+  gRPC-Web JSON responses with the proto field names instead of lowerCamelCase (#46)
+
 ### Changed
 - Development continues on `0.1.6-SNAPSHOT` after the `0.1.5` GitHub release
 

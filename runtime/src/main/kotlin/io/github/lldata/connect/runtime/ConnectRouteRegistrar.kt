@@ -1,5 +1,6 @@
 package io.github.lldata.connect.runtime
 
+import io.github.lldata.connect.protocol.ProtobufCodecSupport
 import io.vertx.core.Handler
 import io.vertx.core.buffer.Buffer
 import io.vertx.core.http.HttpHeaders
@@ -28,10 +29,16 @@ class ConnectRouteRegistrar {
     @Inject
     private lateinit var registry: ConnectMethodRegistry
 
+    @Inject
+    private lateinit var config: ConnectRuntimeConfig
+
     private val log = Logger.getLogger(ConnectRouteRegistrar::class.java)
 
     fun register(@Observes router: Router) {
-        val handler = ConnectUnaryHttpHandler(registry)
+        val handler = ConnectUnaryHttpHandler(
+            registry,
+            ProtobufCodecSupport(preserveProtoFieldNames = config.json().preserveProtoFieldNames()),
+        )
 
         // Before quarkus-grpc (order 0): own all gRPC-Web Content-Types by prefix.
         // Enumerated Route.consumes is insufficient — e.g. application/grpc-web+foo still

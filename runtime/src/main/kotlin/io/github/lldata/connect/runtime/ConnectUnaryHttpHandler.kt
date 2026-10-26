@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class ConnectUnaryHttpHandler(
     private val registry: ConnectMethodRegistry,
+    private val codecs: ProtobufCodecSupport,
 ) : Handler<RoutingContext> {
 
     private val log = Logger.getLogger(ConnectUnaryHttpHandler::class.java)
@@ -298,10 +299,10 @@ class ConnectUnaryHttpHandler(
             java.util.concurrent.Callable {
                 @Suppress("UNCHECKED_CAST")
                 val typed = method as ConnectServerStreamMethod<Message, Message>
-                val requestMessage = ProtobufCodecSupport.parse(requestBytes, typed.requestType(), codec)
+                val requestMessage = codecs.parse(requestBytes, typed.requestType(), codec)
                 val observer = object : ConnectStreamObserver<Message> {
                     override fun onNext(value: Message) {
-                        val payload = ProtobufCodecSupport.encode(value, codec)
+                        val payload = codecs.encode(value, codec)
                         writeEnvelope(ConnectEnvelope.encodeDataMaybeCompressed(payload, responseEncoding))
                     }
 
@@ -380,9 +381,9 @@ class ConnectUnaryHttpHandler(
             java.util.concurrent.Callable {
                 @Suppress("UNCHECKED_CAST")
                 val typed = method as ConnectClientStreamMethod<Message, Message>
-                val requests = requestPayloads.map { ProtobufCodecSupport.parse(it, typed.requestType(), codec) }
+                val requests = requestPayloads.map { codecs.parse(it, typed.requestType(), codec) }
                 val responseMessage = typed.handle(requests, callContext)
-                ProtobufCodecSupport.encode(responseMessage, codec)
+                codecs.encode(responseMessage, codec)
             },
             false,
         ).onComplete { ar ->
@@ -528,10 +529,10 @@ class ConnectUnaryHttpHandler(
             java.util.concurrent.Callable {
                 @Suppress("UNCHECKED_CAST")
                 val typed = method as ConnectBidiStreamMethod<Message, Message>
-                val requests = requestPayloads.map { ProtobufCodecSupport.parse(it, typed.requestType(), codec) }
+                val requests = requestPayloads.map { codecs.parse(it, typed.requestType(), codec) }
                 val observer = object : ConnectStreamObserver<Message> {
                     override fun onNext(value: Message) {
-                        val payload = ProtobufCodecSupport.encode(value, codec)
+                        val payload = codecs.encode(value, codec)
                         writeEnvelope(ConnectEnvelope.encodeDataMaybeCompressed(payload, responseEncoding))
                     }
 
@@ -659,10 +660,10 @@ class ConnectUnaryHttpHandler(
             java.util.concurrent.Callable {
                 @Suppress("UNCHECKED_CAST")
                 val typed = method as ConnectServerStreamMethod<Message, Message>
-                val requestMessage = ProtobufCodecSupport.parse(requestBytes, typed.requestType(), codec)
+                val requestMessage = codecs.parse(requestBytes, typed.requestType(), codec)
                 val observer = object : ConnectStreamObserver<Message> {
                     override fun onNext(value: Message) {
-                        val payload = ProtobufCodecSupport.encode(value, codec)
+                        val payload = codecs.encode(value, codec)
                         writeFrame(GrpcWebFraming.encodeDataMaybeCompressed(payload, responseEncoding))
                     }
 
@@ -722,9 +723,9 @@ class ConnectUnaryHttpHandler(
             java.util.concurrent.Callable {
                 @Suppress("UNCHECKED_CAST")
                 val typed = method as ConnectClientStreamMethod<Message, Message>
-                val requests = requestPayloads.map { ProtobufCodecSupport.parse(it, typed.requestType(), codec) }
+                val requests = requestPayloads.map { codecs.parse(it, typed.requestType(), codec) }
                 val responseMessage = typed.handle(requests, callContext)
-                ProtobufCodecSupport.encode(responseMessage, codec)
+                codecs.encode(responseMessage, codec)
             },
             false,
         ).onComplete { ar ->
@@ -857,10 +858,10 @@ class ConnectUnaryHttpHandler(
             java.util.concurrent.Callable {
                 @Suppress("UNCHECKED_CAST")
                 val typed = method as ConnectBidiStreamMethod<Message, Message>
-                val requests = requestPayloads.map { ProtobufCodecSupport.parse(it, typed.requestType(), codec) }
+                val requests = requestPayloads.map { codecs.parse(it, typed.requestType(), codec) }
                 val observer = object : ConnectStreamObserver<Message> {
                     override fun onNext(value: Message) {
-                        val payload = ProtobufCodecSupport.encode(value, codec)
+                        val payload = codecs.encode(value, codec)
                         writeFrame(GrpcWebFraming.encodeDataMaybeCompressed(payload, responseEncoding))
                     }
 
@@ -1123,9 +1124,9 @@ class ConnectUnaryHttpHandler(
             java.util.concurrent.Callable {
                 @Suppress("UNCHECKED_CAST")
                 val typed = method as ConnectUnaryMethod<Message, Message>
-                val requestMessage = ProtobufCodecSupport.parse(body, typed.requestType(), codec)
+                val requestMessage = codecs.parse(body, typed.requestType(), codec)
                 val responseMessage = typed.handle(requestMessage, callContext)
-                ProtobufCodecSupport.encode(responseMessage, codec)
+                codecs.encode(responseMessage, codec)
             },
             false,
         )
