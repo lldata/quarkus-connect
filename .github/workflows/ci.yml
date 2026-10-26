@@ -21,4 +21,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Build and test
-        run: ./gradlew check --no-daemon
+        # --no-parallel: Quarkus SharedArchivePathTree / ZipCentralDirectory flakes when
+        # :integration-tests:test augments while another module rewrites the runtime jar.
+        run: ./gradlew check --no-daemon --no-parallel

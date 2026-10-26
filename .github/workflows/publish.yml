@@ -60,7 +60,7 @@ jobs:
           fi
 
       - name: Build
-        run: ./gradlew check --no-daemon
+        run: ./gradlew check --no-daemon --no-parallel
 
       # Uploads a bundle to the Central Portal; it does NOT release to Maven Central.
       # Credentials as env vars — never `-P` flags (process table / echoed Run line).
