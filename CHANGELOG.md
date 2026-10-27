@@ -13,7 +13,8 @@ version is tagged.
   (`retry-after-seconds` on guest WhoAmI) (#45)
 - `quarkus.connect.max-inbound-message-size` (default 4 MiB): bound Connect unary bodies and
   each Connect / gRPC-Web streaming envelope; oversize → `resource_exhausted` (#44). Conformance
-  `supportsMessageReceiveLimit` enabled.
+  `supportsMessageReceiveLimit` enabled. Native gRPC also enforces the limit post-decompress
+  via `ConnectGrpcMaxInboundInterceptor` (gzip wire size can be under Netty's framed limit).
 
 ### Changed
 - Development continues on `0.1.7-SNAPSHOT` after the `0.1.6` GitHub release

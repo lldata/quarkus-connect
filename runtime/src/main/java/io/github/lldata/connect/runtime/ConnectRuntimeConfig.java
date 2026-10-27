@@ -18,8 +18,10 @@ public interface ConnectRuntimeConfig {
      * <p>
      * Default {@code 4194304} (4 MiB) matches the common gRPC default. Align with
      * {@code quarkus.grpc.server.max-inbound-message-size} so the same {@code @GrpcService}
-     * sees the same limit on every protocol. Exceeding the limit yields Connect
-     * {@code resource_exhausted} (not a bare HTTP 413).
+     * sees the same limit on every protocol. Native gRPC also runs
+     * {@code ConnectGrpcMaxInboundInterceptor}, which checks the deserialized (post-gzip)
+     * protobuf size — Quarkus/Netty alone only bound the framed/compressed length.
+     * Exceeding the limit yields Connect {@code resource_exhausted} (not a bare HTTP 413).
      * <p>
      * Also raise {@code quarkus.http.limits.max-body-size} to at least this value (plus a
      * small framing overhead for streaming), otherwise Vert.x / Quarkus may reject the
