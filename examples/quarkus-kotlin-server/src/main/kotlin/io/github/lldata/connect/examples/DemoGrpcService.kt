@@ -5,6 +5,7 @@ import io.github.lldata.connect.examples.demo.v1.EchoResponse
 import io.github.lldata.connect.examples.demo.v1.MutinyDemoServiceGrpc
 import io.github.lldata.connect.examples.demo.v1.WhoAmIRequest
 import io.github.lldata.connect.examples.demo.v1.WhoAmIResponse
+import io.grpc.Metadata
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
 import io.quarkus.grpc.GrpcService
@@ -44,10 +45,22 @@ class DemoGrpcService : MutinyDemoServiceGrpc.DemoServiceImplBase() {
                 StatusRuntimeException(Status.UNAUTHENTICATED.withDescription("no subject")),
             )
         if (subject == "guest") {
+            // Demo trailer for Flutter connectrpc clients: Connect unary surfaces this as
+            // HTTP header trailer-retry-after-seconds; clients read it from ConnectException.metadata.
+            val trailers = Metadata()
+            trailers.put(RETRY_AFTER_SECONDS, "30")
             return Uni.createFrom().failure(
-                StatusRuntimeException(Status.PERMISSION_DENIED.withDescription("guest cannot call WhoAmI")),
+                StatusRuntimeException(
+                    Status.PERMISSION_DENIED.withDescription("guest cannot call WhoAmI"),
+                    trailers,
+                ),
             )
         }
         return Uni.createFrom().item(WhoAmIResponse.newBuilder().setSubject(subject).build())
+    }
+
+    companion object {
+        val RETRY_AFTER_SECONDS: Metadata.Key<String> =
+            Metadata.Key.of("retry-after-seconds", Metadata.ASCII_STRING_MARSHALLER)
     }
 }

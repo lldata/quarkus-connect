@@ -12,6 +12,11 @@ platform. HTTP is selected by conditional import:
 
 `lib/connect_http.dart` switches automatically — no hand-edit required to drop grpc-dart.
 
+The demo also shows **response trailers on errors** (`ConnectException.metadata`, e.g.
+`retry-after-seconds` from guest WhoAmI) and a **per-call header provider**
+(`TokenProvider` → `Authorization: Bearer …`, overridable per call) plus a longer
+timeout on the first RPC after an idle period (`IdleAwareTimeout` / cold start).
+
 Dart stubs are generated from the **same** protos as the server (`buf generate`). Generated
 sources under `lib/src/gen/` are committed so the example runs without a Buf install.
 

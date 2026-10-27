@@ -39,12 +39,13 @@ curl -sS -i -X POST http://localhost:8080/demo.v1.DemoService/Echo \
   -H 'connect-protocol-version: 1' \
   -d '{"message":"hello"}'
 
-# Guest cannot WhoAmI → PERMISSION_DENIED (HTTP 403)
+# Guest cannot WhoAmI → PERMISSION_DENIED (HTTP 403) + trailer-retry-after-seconds
 curl -sS -i -X POST http://localhost:8080/demo.v1.DemoService/WhoAmI \
   -H 'Content-Type: application/json' \
   -H 'connect-protocol-version: 1' \
   -H 'Authorization: Bearer demo-guest' \
   -d '{}'
+# look for: trailer-retry-after-seconds: 30
 
 # Invalid argument
 curl -sS -i -X POST http://localhost:8080/demo.v1.DemoService/Echo \

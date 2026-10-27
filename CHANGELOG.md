@@ -8,6 +8,10 @@ version is tagged.
 
 ## [Unreleased]
 
+### Added
+- Flutter example: TokenProvider, IdleAwareTimeout, and reading error trailers
+  (`retry-after-seconds` on guest WhoAmI) (#45)
+
 ### Changed
 - Development continues on `0.1.7-SNAPSHOT` after the `0.1.6` GitHub release
 - Publish is manual/`workflow_dispatch` only: CI stages SNAPSHOT Maven artifacts on `main`;

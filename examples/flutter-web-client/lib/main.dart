@@ -1,16 +1,19 @@
 import 'dart:typed_data';
 
-import 'package:connectrpc/connect.dart' show Headers;
+import 'package:connectrpc/connect.dart';
 import 'package:connectrpc/protobuf.dart';
 import 'package:connectrpc/protocol/connect.dart' as protocol;
 import 'package:file_picker/file_picker.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 
+import 'connect_error_format.dart';
 import 'connect_http.dart';
+import 'idle_timeout.dart';
 import 'src/gen/demo/v1/demo.connect.client.dart';
 import 'src/gen/demo/v1/demo.pb.dart';
 import 'src/gen/media/v1/media.pb.dart';
+import 'token_provider.dart';
 import 'upload_session.dart';
 
 void main() {
@@ -43,7 +46,8 @@ class DemoHomePage extends StatefulWidget {
 class _DemoHomePageState extends State<DemoHomePage> {
   final _baseUrlController = TextEditingController(text: 'http://localhost:8080');
   final _messageController = TextEditingController(text: 'hello from flutter');
-  String _token = 'demo-user';
+  final _tokens = TokenProvider('demo-user');
+  final _idleTimeout = IdleAwareTimeout();
   String _log = '';
   int _seq = 0;
   bool _busy = false;
@@ -61,47 +65,67 @@ class _DemoHomePageState extends State<DemoHomePage> {
 
   UploadSession _uploadSession() => UploadSession(
         baseUrl: _baseUrlController.text.trim(),
-        token: _token,
+        token: _tokens.token,
       );
-
-  Headers _authHeaders() {
-    final h = Headers();
-    h.add('authorization', 'Bearer $_token');
-    return h;
-  }
 
   Future<void> _echo() async {
     setState(() => _busy = true);
     try {
       _seq += 1;
+      final cold = _idleTimeout.isColdStart;
+      final timeout = _idleTimeout.nextTimeout;
       final res = await _demoClient().echo(
         EchoRequest(message: _messageController.text, clientSeq: Int64(_seq)),
-        headers: _authHeaders(),
+        headers: _tokens.headers(),
+        signal: _idleTimeout.signal(),
       );
       setState(() {
         _log =
-            'Echo OK\nmessage=${res.message}\nclientSeq=${res.clientSeq}\nserverTimeUnixMs=${res.serverTimeUnixMs}';
+            'Echo OK (timeout=${timeout.inSeconds}s${cold ? ', cold-start' : ''})\n'
+            'message=${res.message}\nclientSeq=${res.clientSeq}\nserverTimeUnixMs=${res.serverTimeUnixMs}';
       });
     } catch (e) {
-      setState(() => _log = 'Echo error\n$e');
+      setState(() => _log = formatConnectError(e, label: 'Echo error'));
     } finally {
       setState(() => _busy = false);
     }
   }
 
-  Future<void> _whoAmI() async {
+  Future<void> _whoAmI({Headers? overrideHeaders}) async {
     setState(() => _busy = true);
     try {
+      final cold = _idleTimeout.isColdStart;
+      final timeout = _idleTimeout.nextTimeout;
       final res = await _demoClient().whoAmI(
         WhoAmIRequest(),
-        headers: _authHeaders(),
+        headers: _tokens.headers(overrideHeaders: overrideHeaders),
+        signal: _idleTimeout.signal(),
       );
-      setState(() => _log = 'WhoAmI OK\nsubject=${res.subject}');
+      setState(() {
+        _log =
+            'WhoAmI OK (timeout=${timeout.inSeconds}s${cold ? ', cold-start' : ''})\n'
+            'subject=${res.subject}';
+      });
     } catch (e) {
-      setState(() => _log = 'WhoAmI error\n$e');
+      // Guest WhoAmI → PERMISSION_DENIED with trailer retry-after-seconds (see server).
+      final extra = StringBuffer(formatConnectError(e, label: 'WhoAmI error'));
+      if (e is ConnectException) {
+        final retry = e.metadata['retry-after-seconds'];
+        if (retry != null) {
+          extra.writeln('\ntrailer retry-after-seconds=$retry');
+        }
+      }
+      setState(() => _log = extra.toString());
     } finally {
       setState(() => _busy = false);
     }
+  }
+
+  /// Forces Bearer demo-guest so trailers are visible even if the dropdown is
+  /// still on demo-user (per-call Authorization override via TokenProvider).
+  Future<void> _whoAmIAsGuest() {
+    final override = Headers()..add('authorization', 'Bearer demo-guest');
+    return _whoAmI(overrideHeaders: override);
   }
 
   Future<void> _pickAndUpload() async {
@@ -179,7 +203,6 @@ class _DemoHomePageState extends State<DemoHomePage> {
             buf.writeln('- ${m.messageId} ${m.filename} ${m.sizeBytes}B seq=${m.sequence}');
           }
           buf.writeln('stream completed ($count messages this attempt)');
-          // Catch-up streams end when backlog is drained; stop unless empty on first try.
           if (count > 0 || attempt == 1) break;
         } catch (e) {
           buf.writeln('attempt $attempt error: $e');
@@ -231,18 +254,23 @@ class _DemoHomePageState extends State<DemoHomePage> {
               ),
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _token,
+            InputDecorator(
               decoration: const InputDecoration(
-                labelText: 'Bearer token',
+                labelText: 'Bearer token (TokenProvider)',
                 border: OutlineInputBorder(),
               ),
-              items: const [
-                DropdownMenuItem(value: 'demo-user', child: Text('demo-user (full)')),
-                DropdownMenuItem(value: 'demo-guest', child: Text('demo-guest (Echo only)')),
-                DropdownMenuItem(value: 'bad', child: Text('bad (UNAUTHENTICATED)')),
-              ],
-              onChanged: (v) => setState(() => _token = v ?? 'demo-user'),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  value: _tokens.token,
+                  items: const [
+                    DropdownMenuItem(value: 'demo-user', child: Text('demo-user (full)')),
+                    DropdownMenuItem(value: 'demo-guest', child: Text('demo-guest (Echo only)')),
+                    DropdownMenuItem(value: 'bad', child: Text('bad (UNAUTHENTICATED)')),
+                  ],
+                  onChanged: (v) => setState(() => _tokens.token = v ?? 'demo-user'),
+                ),
+              ),
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -250,7 +278,11 @@ class _DemoHomePageState extends State<DemoHomePage> {
               runSpacing: 8,
               children: [
                 FilledButton(onPressed: _busy ? null : _echo, child: const Text('Echo')),
-                OutlinedButton(onPressed: _busy ? null : _whoAmI, child: const Text('WhoAmI')),
+                OutlinedButton(onPressed: _busy ? null : () => _whoAmI(), child: const Text('WhoAmI')),
+                OutlinedButton(
+                  onPressed: _busy ? null : _whoAmIAsGuest,
+                  child: const Text('WhoAmI as guest (trailers)'),
+                ),
                 FilledButton.tonal(
                   onPressed: _busy ? null : _pickAndUpload,
                   child: const Text('Upload file (chunked)'),
@@ -268,7 +300,9 @@ class _DemoHomePageState extends State<DemoHomePage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Live cursor after_sequence=$_pollAfter',
+              'Live cursor after_sequence=$_pollAfter · next RPC timeout '
+              '${_idleTimeout.nextTimeout.inSeconds}s'
+              '${_idleTimeout.isColdStart ? ' (cold-start)' : ''}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             if (_busy && _uploadProgress > 0) ...[
