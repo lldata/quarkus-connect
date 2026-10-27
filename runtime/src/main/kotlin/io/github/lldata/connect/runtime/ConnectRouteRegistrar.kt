@@ -7,7 +7,6 @@ import io.vertx.core.buffer.Buffer
 import io.vertx.core.http.HttpHeaders
 import io.vertx.ext.web.Router
 import io.vertx.ext.web.RoutingContext
-import io.vertx.ext.web.handler.BodyHandler
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.enterprise.event.Observes
 import jakarta.inject.Inject
@@ -24,8 +23,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * `application/grpc-web*` request first at a negative order and leave native
  * `application/grpc` to quarkus-grpc via [ConnectUnaryHttpHandler]'s `ctx.next()`.
  *
- * Client and bidi streaming skip [BodyHandler] / full-body buffering and read envelopes
- * incrementally (see [StreamingRequestReader]).
+ * Client and bidi streaming skip full-body buffering and read envelopes incrementally
+ * (see [StreamingRequestReader]). Unary / server-stream still buffer via `req.body()`.
+ *
+ * Note: Vert.x Web forbids mixing a USER handler with [io.vertx.ext.web.handler.BodyHandler]
+ * on the same route, so buffering is done inline rather than chaining BodyHandler.
  */
 @ApplicationScoped
 class ConnectRouteRegistrar {
@@ -51,9 +53,7 @@ class ConnectRouteRegistrar {
 
         router.routeWithRegex("^/.+/.+$")
             .order(CONNECT_FALLBACK_ORDER)
-            .handler(ConnectBodyGateHandler(registry, handler))
-            .handler(BodyHandler.create())
-            .handler(handler)
+            .handler(ConnectInboundHandler(registry, handler))
 
         log.info(
             "Connect RPC enabled; unary=${registry.procedures()} " +
@@ -70,10 +70,10 @@ class ConnectRouteRegistrar {
 }
 
 /**
- * For Connect client/bidi streaming Content-Types, skip [BodyHandler] and dispatch
- * directly with [StreamingRequestReader.STREAM_BODY_KEY] set.
+ * Connect (+ gRPC-Web backup) inbound: stream client/bidi envelopes, otherwise buffer
+ * the body then dispatch (same outcome as BodyHandler + handler, without mixing handler types).
  */
-internal class ConnectBodyGateHandler(
+internal class ConnectInboundHandler(
     private val registry: ConnectMethodRegistry,
     private val connectHandler: Handler<RoutingContext>,
 ) : Handler<RoutingContext> {
@@ -84,7 +84,7 @@ internal class ConnectBodyGateHandler(
             connectHandler.handle(ctx)
             return
         }
-        ctx.next()
+        bufferThenDispatch(ctx, connectHandler)
     }
 }
 
@@ -108,21 +108,7 @@ internal class GrpcWebPreemptHandler(
             connectHandler.handle(ctx)
             return
         }
-        val req = ctx.request()
-        val done = AtomicBoolean(false)
-        req.body()
-            .onSuccess { buffer ->
-                if (!done.compareAndSet(false, true)) return@onSuccess
-                ctx.setBody(buffer ?: Buffer.buffer())
-                connectHandler.handle(ctx)
-            }
-            .onFailure { err ->
-                if (!done.compareAndSet(false, true)) return@onFailure
-                ctx.fail(err)
-            }
-        if (!req.isEnded) {
-            req.resume()
-        }
+        bufferThenDispatch(ctx, connectHandler)
     }
 }
 
@@ -134,6 +120,24 @@ internal fun shouldStreamRequestBody(registry: ConnectMethodRegistry, ctx: Routi
     if (!clientOrBidi) return false
     return ConnectEnvelope.isConnectStreamingContentType(media) ||
         media.startsWith("application/grpc-web")
+}
+
+private fun bufferThenDispatch(ctx: RoutingContext, connectHandler: Handler<RoutingContext>) {
+    val req = ctx.request()
+    val done = AtomicBoolean(false)
+    req.body()
+        .onSuccess { buffer ->
+            if (!done.compareAndSet(false, true)) return@onSuccess
+            ctx.setBody(buffer ?: Buffer.buffer())
+            connectHandler.handle(ctx)
+        }
+        .onFailure { err ->
+            if (!done.compareAndSet(false, true)) return@onFailure
+            ctx.fail(err)
+        }
+    if (!req.isEnded) {
+        req.resume()
+    }
 }
 
 private fun mediaType(contentType: String?): String {
