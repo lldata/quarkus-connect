@@ -7,7 +7,7 @@ in-repo so external users see the same floor.
 | Area | Status | Notes |
 | --- | --- | --- |
 | Unary POST `application/json` / `proto` | **Yes** | Same `@GrpcService` as native gRPC |
-| Unary GET `connect=v1` | **Yes** | `encoding`, `message`, optional `base64=1`; unknown encoding → **415** |
+| Unary GET `connect=v1` | **Yes** | Only when `MethodOptions.idempotency_level = NO_SIDE_EFFECTS` (else **405** `Allow: POST`, connect-go parity). `encoding`, `message`, optional `base64=1`; unknown encoding → **415** |
 | Unary errors JSON + HTTP mapping | **Yes** | Empty `message` omitted; `details[]` for packed `google.rpc` |
 | Unary trailers as `trailer-*` | **Yes** | |
 | `connect-protocol-version: 1` | **Yes** | Unsupported → `invalid_argument` |

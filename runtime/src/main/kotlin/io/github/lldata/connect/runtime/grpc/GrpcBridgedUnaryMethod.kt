@@ -2,6 +2,7 @@ package io.github.lldata.connect.runtime.grpc
 
 import com.google.protobuf.Message
 import io.github.lldata.connect.spi.ConnectCallContext
+import io.github.lldata.connect.spi.ConnectIdempotencyLevel
 import io.github.lldata.connect.spi.ConnectUnaryMethod
 import io.grpc.ServerInterceptor
 import io.grpc.ServerMethodDefinition
@@ -23,6 +24,19 @@ class GrpcBridgedUnaryMethod<ReqT : Message, RespT : Message>(
     override fun requestType(): Class<ReqT> = requestClass
 
     override fun responseType(): Class<RespT> = responseClass
+
+    /**
+     * From protobuf `idempotency_level`: gRPC Java codegen sets [io.grpc.MethodDescriptor.isSafe]
+     * for `NO_SIDE_EFFECTS` and [io.grpc.MethodDescriptor.isIdempotent] for `IDEMPOTENT`.
+     */
+    override fun idempotencyLevel(): ConnectIdempotencyLevel {
+        val descriptor = method.methodDescriptor
+        return when {
+            descriptor.isSafe -> ConnectIdempotencyLevel.NO_SIDE_EFFECTS
+            descriptor.isIdempotent -> ConnectIdempotencyLevel.IDEMPOTENT
+            else -> ConnectIdempotencyLevel.UNKNOWN
+        }
+    }
 
     override fun handle(request: ReqT, context: ConnectCallContext): RespT =
         GrpcUnaryInvoker.invoke(method, interceptors, request, context)
