@@ -9,6 +9,13 @@ version is tagged.
 ## [Unreleased]
 
 ### Changed
+- Development continues on `0.1.9-SNAPSHOT` after the `0.1.8` release
+
+## [0.1.8] - 2026-10-27
+
+Promoted from `0.1.8-SNAPSHOT` (CI snapshot artifact; Publish workflow, no rebuild).
+
+### Changed
 - Development continues on `0.1.8-SNAPSHOT` after the `0.1.7` release
 
 ### Fixed
