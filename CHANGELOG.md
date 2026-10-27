@@ -8,6 +8,13 @@ version is tagged.
 
 ## [Unreleased]
 
+### Changed
+- Development continues on `0.1.8-SNAPSHOT` after the `0.1.7` release
+
+## [0.1.7] - 2026-10-27
+
+Promoted from `0.1.7-SNAPSHOT` (CI snapshot artifact; Publish workflow, no rebuild).
+
 ### Added
 - Flutter example: TokenProvider, IdleAwareTimeout, and reading error trailers
   (`retry-after-seconds` on guest WhoAmI) (#45)
