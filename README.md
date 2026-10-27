@@ -83,6 +83,7 @@ Runtime properties (`application.properties` or environment variables):
 
 | Property | Default | Meaning |
 | --- | --- | --- |
+| `quarkus.connect.max-inbound-message-size` | `4194304` (4 MiB) | Max decoded unary body / streaming envelope size (bytes). Exceeding → Connect `resource_exhausted`. Align with `quarkus.grpc.server.max-inbound-message-size`. Also set `quarkus.http.limits.max-body-size` ≥ this value (plus framing) so Vert.x does not answer HTTP 413 first. |
 | `quarkus.connect.json.preserve-proto-field-names` | `false` | Print JSON responses with the proto field names (`request_id`) instead of the proto3 JSON lowerCamelCase names (`requestId`). Applies to Connect unary, Connect streaming and gRPC-Web `+json`. |
 
 JSON requests are parsed in either spelling whatever the setting. Leave the default unless your

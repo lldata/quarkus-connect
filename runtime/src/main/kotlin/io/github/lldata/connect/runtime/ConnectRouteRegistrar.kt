@@ -38,6 +38,7 @@ class ConnectRouteRegistrar {
         val handler = ConnectUnaryHttpHandler(
             registry,
             ProtobufCodecSupport(preserveProtoFieldNames = config.json().preserveProtoFieldNames()),
+            maxInboundMessageSize = config.maxInboundMessageSize(),
         )
 
         // Before quarkus-grpc (order 0): own all gRPC-Web Content-Types by prefix.

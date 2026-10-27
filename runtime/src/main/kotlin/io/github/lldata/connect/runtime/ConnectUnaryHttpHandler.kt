@@ -4,6 +4,7 @@ import com.google.protobuf.Message
 import io.github.lldata.connect.protocol.ConnectCompression
 import io.github.lldata.connect.protocol.ConnectEnvelope
 import io.github.lldata.connect.protocol.ConnectErrorJson
+import io.github.lldata.connect.protocol.ConnectMessageLimits
 import io.github.lldata.connect.protocol.ConnectProtocolConstants
 import io.github.lldata.connect.protocol.ProtobufCodecSupport
 import io.github.lldata.connect.runtime.grpc.GrpcStatusMapping
@@ -38,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class ConnectUnaryHttpHandler(
     private val registry: ConnectMethodRegistry,
     private val codecs: ProtobufCodecSupport,
+    private val maxInboundMessageSize: Long = ConnectMessageLimits.DEFAULT_MAX_INBOUND_MESSAGE_SIZE,
 ) : Handler<RoutingContext> {
 
     private val log = Logger.getLogger(ConnectUnaryHttpHandler::class.java)
@@ -222,7 +224,7 @@ class ConnectUnaryHttpHandler(
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
 
         val requestBytes = try {
-            ConnectEnvelope.decodeFirstDataMessage(body, requestEncoding)
+            ConnectEnvelope.decodeFirstDataMessage(body, requestEncoding, maxInboundMessageSize)
         } catch (e: ConnectException) {
             writeConnectStreamError(ctx, e, contentType, responseEncoding)
             return
@@ -368,7 +370,7 @@ class ConnectUnaryHttpHandler(
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
 
         val requestPayloads = try {
-            ConnectEnvelope.decodeAllDataMessages(body, requestEncoding)
+            ConnectEnvelope.decodeAllDataMessages(body, requestEncoding, maxInboundMessageSize)
         } catch (e: ConnectException) {
             writeConnectStreamError(ctx, e, contentType, responseEncoding)
             return
@@ -453,7 +455,7 @@ class ConnectUnaryHttpHandler(
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
 
         val requestPayloads = try {
-            ConnectEnvelope.decodeAllDataMessages(body, requestEncoding)
+            ConnectEnvelope.decodeAllDataMessages(body, requestEncoding, maxInboundMessageSize)
         } catch (e: ConnectException) {
             writeConnectStreamError(ctx, e, contentType, responseEncoding)
             return
@@ -580,7 +582,7 @@ class ConnectUnaryHttpHandler(
         val headers = collectHeaders(ctx)
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
         val requestBytes = try {
-            GrpcWebFraming.decodeExactlyOneDataMessage(body, requestEncoding)
+            GrpcWebFraming.decodeExactlyOneDataMessage(body, requestEncoding, maxInboundMessageSize)
         } catch (e: ConnectException) {
             writeGrpcWebError(ctx, e, contentType)
             return
@@ -711,7 +713,7 @@ class ConnectUnaryHttpHandler(
         val headers = collectHeaders(ctx)
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
         val requestPayloads = try {
-            GrpcWebFraming.decodeAllDataMessages(body, requestEncoding)
+            GrpcWebFraming.decodeAllDataMessages(body, requestEncoding, maxInboundMessageSize)
         } catch (e: ConnectException) {
             writeGrpcWebError(ctx, e, contentType)
             return
@@ -778,7 +780,7 @@ class ConnectUnaryHttpHandler(
         val headers = collectHeaders(ctx)
         val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
         val requestPayloads = try {
-            GrpcWebFraming.decodeAllDataMessages(body, requestEncoding)
+            GrpcWebFraming.decodeAllDataMessages(body, requestEncoding, maxInboundMessageSize)
         } catch (e: ConnectException) {
             writeGrpcWebError(ctx, e, contentType)
             return
@@ -945,7 +947,9 @@ class ConnectUnaryHttpHandler(
         val headers = collectHeaders(ctx)
         val rawBody = ctx.body().buffer()?.bytes ?: ByteArray(0)
         val body = try {
-            ConnectCompression.decompress(requestEncoding, rawBody)
+            val decompressed = ConnectCompression.decompress(requestEncoding, rawBody)
+            ConnectMessageLimits.requireWithinLimit(decompressed.size, maxInboundMessageSize)
+            decompressed
         } catch (e: ConnectException) {
             writeConnectError(ctx, e)
             return
@@ -1035,7 +1039,9 @@ class ConnectUnaryHttpHandler(
         }
 
         val body = try {
-            ConnectCompression.decompress(requestEncoding, rawMessage)
+            val decompressed = ConnectCompression.decompress(requestEncoding, rawMessage)
+            ConnectMessageLimits.requireWithinLimit(decompressed.size, maxInboundMessageSize)
+            decompressed
         } catch (e: ConnectException) {
             writeConnectError(ctx, e, varyAcceptEncoding = true)
             return
@@ -1087,6 +1093,7 @@ class ConnectUnaryHttpHandler(
             GrpcWebFraming.decodeRequestMessage(
                 ctx.body().buffer()?.bytes ?: ByteArray(0),
                 requestEncoding,
+                maxInboundMessageSize,
             )
         } catch (e: ConnectException) {
             writeGrpcWebError(ctx, e, contentType)

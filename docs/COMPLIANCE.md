@@ -22,6 +22,7 @@ in-repo so external users see the same floor.
 | Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false`; conformance `PROTOCOL_GRPC` (proto; JSON excluded). Error-detail trailers still padded by Vert.x `Utils.writeMetadata` (known-flaky) |
 | Interceptors on Connect | **Yes** | `@GlobalInterceptor` via bridge |
 | Quarkus Security on Connect | **Opt-in** | App adds `quarkus-security` + mechanism; identity propagation + `@RolesAllowed` / `@Authenticated` on Connect/gRPC-Web (`:integration-tests-security`) |
+| Max inbound message size | **Yes** | `quarkus.connect.max-inbound-message-size` (default 4 MiB) on unary + each Connect/gRPC-Web envelope → `resource_exhausted`; raise `quarkus.http.limits.max-body-size` in parallel |
 | JVM Connect *client* | **Official, external** | This repo is **server-only**. Use [Connect-Kotlin](https://connectrpc.com/docs/kotlin/getting-started/) (`com.connectrpc:connect-kotlin`, transport `com.connectrpc:connect-kotlin-okhttp`) — the Quarkus Connect client for JVM/Kotlin. Not a gap to build here. |
 
 ## Examples proof (summary)
@@ -42,7 +43,8 @@ in-repo so external users see the same floor.
   (e.g. brotli4j + platform classifiers), which is a poor fit for a Central-published extension.
   Prefer edge/Quarkus HTTP `br` for whole responses; Connect message coding stays `gzip` + `identity`.
 - Full [connectrpc/conformance](https://github.com/connectrpc/conformance) matrix (TLS, HTTP/3,
-  gRPC×JSON, full-duplex, message limits) — thin host + partial suite in CI (see [INTEROP.md](INTEROP.md))
+  gRPC×JSON, full-duplex) — thin host + partial suite in CI (see [INTEROP.md](INTEROP.md));
+  message receive limits are enabled (`supportsMessageReceiveLimit`)
 - Unpadded `grpc-status-details-bin` on the **native** gRPC path (Vert.x pads Base64; Connect /
   gRPC-Web paths already emit unpadded)
 - Maven Central secrets (`docs/RELEASE.md` Path B)

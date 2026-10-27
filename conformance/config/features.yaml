@@ -1,5 +1,5 @@
 # Feature matrix for quarkus-connect ConformanceService host.
-# Skips TLS, message-receive limits, gRPC+JSON, and full-duplex bidi (buffered path).
+# Skips TLS, gRPC+JSON, and full-duplex bidi (buffered path until #43).
 # See docs/INTEROP.md for the skip rationale and known-failing patterns.
 features:
   versions:
@@ -26,7 +26,7 @@ features:
   supportsTrailers: true
   supportsHalfDuplexBidiOverHttp1: true
   supportsConnectGet: true
-  supportsMessageReceiveLimit: false
+  supportsMessageReceiveLimit: true
 
 # Native gRPC is protobuf-on-HTTP/2; Connect JSON is not a gRPC wire codec.
 exclude_cases:

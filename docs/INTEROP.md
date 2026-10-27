@@ -38,9 +38,11 @@ Out of config / excluded:
 
 - TLS / client certs / HTTP/3
 - Native gRPC × JSON (`exclude_cases`)
-- Full-duplex bidi
-- Message receive limits
+- Full-duplex bidi (client/bidi still buffer the request body until streaming lands)
 - Brotli / zstd / deflate / snappy
+
+Message receive limits: `supportsMessageReceiveLimit: true`; the host sets
+`quarkus.connect.max-inbound-message-size` from `message_receive_limit`.
 
 gRPC-Web on h2c is claimed by quarkus-connect at a route order before quarkus-grpc.
 quarkus-grpc's `isGrpc` matches `^application/grpc.*` on HTTP/2, which would otherwise
@@ -61,4 +63,4 @@ Remove a known-failing entry when it starts passing — the runner requires thos
 
 - `connect-timeout-ms` must be a positive integer ≤ 10 digits (invalid → `invalid_argument`)
 - Server/bidi streams attach a `StreamCallControl`: HTTP response close/exception cancels the gRPC `Context`
-- Client/bidi still buffer the request body (vertical slice); interactive duplex is a later hardening item
+- Client/bidi still buffer the request body (vertical slice; tracked in #43); interactive duplex is a later hardening item

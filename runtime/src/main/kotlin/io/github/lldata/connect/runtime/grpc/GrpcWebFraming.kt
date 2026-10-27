@@ -1,6 +1,7 @@
 package io.github.lldata.connect.runtime.grpc
 
 import io.github.lldata.connect.protocol.ConnectCompression
+import io.github.lldata.connect.protocol.ConnectMessageLimits
 import io.github.lldata.connect.spi.ConnectCode
 import io.github.lldata.connect.spi.ConnectException
 import java.io.ByteArrayOutputStream
@@ -76,6 +77,7 @@ object GrpcWebFraming {
     fun decodeAllDataMessages(
         body: ByteArray,
         grpcEncoding: String? = ConnectCompression.IDENTITY,
+        maxInboundMessageSize: Long = ConnectMessageLimits.DEFAULT_MAX_INBOUND_MESSAGE_SIZE,
     ): List<ByteArray> {
         if (body.isEmpty()) return emptyList()
         val out = mutableListOf<ByteArray>()
@@ -83,7 +85,8 @@ object GrpcWebFraming {
         while (offset + 5 <= body.size) {
             val flag = body[offset].toInt() and 0xff
             val length = ByteBuffer.wrap(body, offset + 1, 4).int
-            if (length < 0 || offset + 5 + length > body.size) {
+            ConnectMessageLimits.requireEnvelopeLength(length, maxInboundMessageSize)
+            if (offset + 5 + length > body.size) {
                 throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Invalid gRPC-Web frame length: $length")
             }
             val payload = body.copyOfRange(offset + 5, offset + 5 + length)
@@ -91,7 +94,9 @@ object GrpcWebFraming {
             if (flag and FLAG_TRAILER != 0) {
                 continue
             }
-            out += decodePayload(flag, payload, grpcEncoding)
+            val decoded = decodePayload(flag, payload, grpcEncoding)
+            ConnectMessageLimits.requireWithinLimit(decoded.size, maxInboundMessageSize)
+            out += decoded
         }
         if (offset != body.size) {
             throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Truncated gRPC-Web frame")
@@ -106,8 +111,9 @@ object GrpcWebFraming {
     fun decodeExactlyOneDataMessage(
         body: ByteArray,
         grpcEncoding: String? = ConnectCompression.IDENTITY,
+        maxInboundMessageSize: Long = ConnectMessageLimits.DEFAULT_MAX_INBOUND_MESSAGE_SIZE,
     ): ByteArray {
-        val all = decodeAllDataMessages(body, grpcEncoding)
+        val all = decodeAllDataMessages(body, grpcEncoding, maxInboundMessageSize)
         return when (all.size) {
             0 -> throw ConnectException(
                 ConnectCode.UNIMPLEMENTED,
@@ -127,7 +133,8 @@ object GrpcWebFraming {
     fun decodeRequestMessage(
         body: ByteArray,
         grpcEncoding: String? = ConnectCompression.IDENTITY,
-    ): ByteArray = decodeExactlyOneDataMessage(body, grpcEncoding)
+        maxInboundMessageSize: Long = ConnectMessageLimits.DEFAULT_MAX_INBOUND_MESSAGE_SIZE,
+    ): ByteArray = decodeExactlyOneDataMessage(body, grpcEncoding, maxInboundMessageSize)
 
     private fun decodePayload(flag: Int, payload: ByteArray, grpcEncoding: String?): ByteArray {
         if (flag and FLAG_COMPRESSED == 0) return payload

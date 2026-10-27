@@ -16,7 +16,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * connectconformance server-under-test entry: read [ServerCompatRequest] from stdin,
  * start Quarkus on an ephemeral port, write [ServerCompatResponse] to stdout, wait for SIGTERM.
  *
- * Thin host: TLS is rejected (supports_tls=false). Message receive limits are ignored.
+ * Thin host: TLS is rejected (supports_tls=false). Message receive limits map to
+ * `quarkus.connect.max-inbound-message-size` when the suite requests one.
  */
 @QuarkusMain
 object ConformanceMain {
@@ -27,17 +28,18 @@ object ConformanceMain {
             System.err.println("conformance host: TLS requested but supports_tls=false in features.yaml")
             kotlin.system.exitProcess(2)
         }
-        if (request.messageReceiveLimit != 0) {
-            System.err.println(
-                "conformance host: ignoring message_receive_limit=${request.messageReceiveLimit} " +
-                    "(supports_message_receive_limit=false)",
-            )
-        }
 
         val port = ServerSocket(0).use { it.localPort }
         System.setProperty("quarkus.http.port", port.toString())
         System.setProperty("quarkus.http.host", "127.0.0.1")
         System.setProperty("java.util.logging.manager", "org.jboss.logmanager.LogManager")
+        if (request.messageReceiveLimit != 0) {
+            val limit = request.messageReceiveLimit.toLong()
+            System.setProperty("quarkus.connect.max-inbound-message-size", limit.toString())
+            // Unary bodies go through Vert.x BodyHandler; keep HTTP limit at least as large.
+            System.setProperty("quarkus.http.limits.max-body-size", "${limit + 1024}B")
+            System.err.println("conformance host: message_receive_limit=$limit → quarkus.connect.max-inbound-message-size")
+        }
         CompatState.port = port
         CompatState.request = request
 

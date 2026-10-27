@@ -62,8 +62,9 @@ object ConnectEnvelope {
     fun decodeExactlyOneDataMessage(
         body: ByteArray,
         requestEncoding: String? = ConnectCompression.IDENTITY,
+        maxInboundMessageSize: Long = ConnectMessageLimits.DEFAULT_MAX_INBOUND_MESSAGE_SIZE,
     ): ByteArray {
-        val all = decodeAllDataMessages(body, requestEncoding)
+        val all = decodeAllDataMessages(body, requestEncoding, maxInboundMessageSize)
         return when (all.size) {
             0 -> throw ConnectException(
                 ConnectCode.UNIMPLEMENTED,
@@ -82,13 +83,21 @@ object ConnectEnvelope {
      * When the compressed flag is set, [requestEncoding] (from `connect-content-encoding`)
      * is used to decompress the payload.
      */
-    fun decodeFirstDataMessage(body: ByteArray, requestEncoding: String? = ConnectCompression.IDENTITY): ByteArray =
-        decodeExactlyOneDataMessage(body, requestEncoding)
+    fun decodeFirstDataMessage(
+        body: ByteArray,
+        requestEncoding: String? = ConnectCompression.IDENTITY,
+        maxInboundMessageSize: Long = ConnectMessageLimits.DEFAULT_MAX_INBOUND_MESSAGE_SIZE,
+    ): ByteArray =
+        decodeExactlyOneDataMessage(body, requestEncoding, maxInboundMessageSize)
 
     /**
      * Decode every data envelope from a Connect streaming request body (client streaming).
      */
-    fun decodeAllDataMessages(body: ByteArray, requestEncoding: String? = ConnectCompression.IDENTITY): List<ByteArray> {
+    fun decodeAllDataMessages(
+        body: ByteArray,
+        requestEncoding: String? = ConnectCompression.IDENTITY,
+        maxInboundMessageSize: Long = ConnectMessageLimits.DEFAULT_MAX_INBOUND_MESSAGE_SIZE,
+    ): List<ByteArray> {
         if (body.isEmpty()) return emptyList()
         val out = mutableListOf<ByteArray>()
         var offset = 0
@@ -98,12 +107,13 @@ object ConnectEnvelope {
                 throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Request stream must not send end-stream")
             }
             val length = ByteBuffer.wrap(body, offset + 1, 4).int
-            if (length < 0 || offset + 5 + length > body.size) {
+            ConnectMessageLimits.requireEnvelopeLength(length, maxInboundMessageSize)
+            if (offset + 5 + length > body.size) {
                 throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Invalid Connect envelope length: $length")
             }
             val payload = body.copyOfRange(offset + 5, offset + 5 + length)
             offset += 5 + length
-            out += if (flag and FLAG_COMPRESSED != 0) {
+            val decoded = if (flag and FLAG_COMPRESSED != 0) {
                 val encoding = ConnectCompression.normalize(requestEncoding)
                 if (encoding == ConnectCompression.IDENTITY) {
                     // Protocol error: compressed bit set without a real compression pool.
@@ -116,6 +126,8 @@ object ConnectEnvelope {
             } else {
                 payload
             }
+            ConnectMessageLimits.requireWithinLimit(decoded.size, maxInboundMessageSize)
+            out += decoded
         }
         if (offset != body.size) {
             throw ConnectException(ConnectCode.INVALID_ARGUMENT, "Truncated Connect envelope")
