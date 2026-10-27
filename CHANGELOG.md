@@ -10,6 +10,9 @@ version is tagged.
 
 ### Changed
 - Development continues on `0.1.7-SNAPSHOT` after the `0.1.6` GitHub release
+- Publish is manual/`workflow_dispatch` only: CI stages SNAPSHOT Maven artifacts on `main`;
+  the Publish workflow promotes the newest snapshot to a release (no rebuild) using
+  Environment `publish` secrets
 
 ## [0.1.6] - 2026-10-26
 

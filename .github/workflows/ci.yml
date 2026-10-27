@@ -7,6 +7,7 @@ on:
 
 # Build floor is JDK 21 (toolchain); library bytecode targets JVM 17.
 # House style: lldata/quarkus-kotlin-typescript-rest-client-generator
+# Never publishes to Maven Central — that is workflow_dispatch Publish only.
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,3 +25,38 @@ jobs:
         # --no-parallel: Quarkus SharedArchivePathTree / ZipCentralDirectory flakes when
         # :integration-tests:test augments while another module rewrites the runtime jar.
         run: ./gradlew check --no-daemon --no-parallel
+
+      # Newest main SNAPSHOT, staged for the manual Publish workflow to promote
+      # without rebuilding. PRs do not upload — only green main builds.
+      - name: Stage snapshot Maven repo
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: snapshot
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          if [[ "$version" != *-SNAPSHOT ]]; then
+            echo "::notice::main version is $version (not a SNAPSHOT); skipping snapshot artifact"
+            echo "staged=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ./gradlew publishToMavenLocal --no-daemon --no-parallel
+          stage="$RUNNER_TEMP/snapshot-maven-repo"
+          rm -rf "$stage"
+          mkdir -p "$stage"
+          # Published coordinates only (group io.github.lldata).
+          cp -a "$HOME/.m2/repository/io" "$stage/"
+          printf '%s\n' "$version" >"$stage/SNAPSHOT_VERSION"
+          printf '%s\n' "${GITHUB_SHA}" >"$stage/GIT_SHA"
+          tar -C "$stage" -czf "$RUNNER_TEMP/snapshot-maven-repo.tgz" io SNAPSHOT_VERSION GIT_SHA
+          echo "staged=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "path=$RUNNER_TEMP/snapshot-maven-repo.tgz" >> "$GITHUB_OUTPUT"
+
+      - name: Upload snapshot Maven repo
+        if: steps.snapshot.outputs.staged == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: snapshot-maven-repo
+          path: ${{ steps.snapshot.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
