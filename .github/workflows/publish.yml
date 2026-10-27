@@ -1,40 +1,65 @@
 name: Publish
 
-# Tag-driven Central Portal upload + draft GitHub release.
-# Fail-closed without SIGNING_* / MAVEN_CENTRAL_* secrets (house style).
+# Manual / AI only. Promotes the newest main SNAPSHOT Maven artifact (already
+# built and uploaded by CI) to a release version — no compile/test/package.
+# Secrets live on GitHub Environment `publish`.
 
 on:
-  push:
-    tags: ["v[0-9]+.[0-9]+.[0-9]+**"]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "promote" to publish the newest main SNAPSHOT to Central'
+        required: true
+        type: string
 
 jobs:
-  publish:
+  promote:
     runs-on: ubuntu-latest
 
-    # Only the canonical repository holds the publishing secrets.
-    if: github.repository == 'lldata/quarkus-connect'
+    if: >-
+      github.repository == 'lldata/quarkus-connect'
+      && github.event.inputs.confirm == 'promote'
 
-    # Path B credentials live on the GitHub Environment named `publish`
-    # (Settings → Environments → publish → Environment secrets), not only
-    # repository-level Actions secrets. Job must declare the environment so
-    # secrets.SIGNING_* / MAVEN_CENTRAL_* resolve.
     environment: publish
 
     permissions:
       contents: write
+      actions: read
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Resolve newest snapshot on main
+        id: ver
+        run: |
+          set -euo pipefail
+          snapshot=$(sed -n 's/^version=//p' gradle.properties)
+          if [[ "$snapshot" != *-SNAPSHOT ]]; then
+            echo "::error::main version is '$snapshot'; expected a *-SNAPSHOT to promote"
+            exit 1
+          fi
+          release="${snapshot%-SNAPSHOT}"
+          if git rev-parse "v${release}" >/dev/null 2>&1; then
+            echo "::error::tag v${release} already exists — refusing to re-release"
+            exit 1
+          fi
+          sha=$(git rev-parse HEAD)
+          {
+            echo "snapshot=$snapshot"
+            echo "release=$release"
+            echo "sha=$sha"
+          } >> "$GITHUB_OUTPUT"
+          echo "Promoting $snapshot → $release at $sha"
 
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
 
-      - uses: gradle/actions/setup-gradle@v6
-
-      # Signing turns itself on when a key is present, so a missing secret would otherwise upload
-      # an unsigned bundle and be rejected minutes later by the Portal.
       - name: Require the publishing secrets
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
@@ -52,57 +77,128 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve the version
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Check the tag matches the committed version
+      - name: Download newest CI snapshot artifact for this commit
         env:
-          TAGGED: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.ver.outputs.sha }}
+          SNAPSHOT: ${{ steps.ver.outputs.snapshot }}
         run: |
-          committed=$(sed -n 's/^version=//p' gradle.properties)
-          if [ "$committed" != "$TAGGED" ]; then
-            echo "::error::Tag v$TAGGED does not match gradle.properties version $committed"
+          set -euo pipefail
+          # Exact commit — never an older main build.
+          run_id=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --branch main \
+            --commit "$SHA" \
+            --workflow CI \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // empty')
+          if [[ -z "$run_id" ]]; then
+            echo "::error::No successful CI run for main@$SHA. Wait for CI to stage snapshot-maven-repo."
             exit 1
           fi
+          echo "Using CI run $run_id for $SHA"
+          mkdir -p "$RUNNER_TEMP/dl"
+          gh run download "$run_id" \
+            --repo "${{ github.repository }}" \
+            --name snapshot-maven-repo \
+            --dir "$RUNNER_TEMP/dl"
+          tgz=$(find "$RUNNER_TEMP/dl" -name 'snapshot-maven-repo.tgz' -print -quit)
+          [[ -n "$tgz" ]] || {
+            echo "::error::CI run $run_id has no snapshot-maven-repo.tgz"
+            exit 1
+          }
+          mkdir -p "$RUNNER_TEMP/snapshot-repo"
+          tar -C "$RUNNER_TEMP/snapshot-repo" -xzf "$tgz"
+          got=$(tr -d '[:space:]' <"$RUNNER_TEMP/snapshot-repo/SNAPSHOT_VERSION")
+          art_sha=$(tr -d '[:space:]' <"$RUNNER_TEMP/snapshot-repo/GIT_SHA")
+          if [[ "$got" != "$SNAPSHOT" ]]; then
+            echo "::error::Artifact SNAPSHOT_VERSION=$got does not match main $SNAPSHOT"
+            exit 1
+          fi
+          if [[ "$art_sha" != "$SHA" ]]; then
+            echo "::error::Artifact GIT_SHA=$art_sha does not match main $SHA"
+            exit 1
+          fi
+          echo "SNAPSHOT_REPO=$RUNNER_TEMP/snapshot-repo" >> "$GITHUB_ENV"
 
-      - name: Build
-        run: ./gradlew check --no-daemon --no-parallel
-
-      # Uploads a bundle to the Central Portal; it does NOT release to Maven Central.
-      # Credentials as env vars — never `-P` flags (process table / echoed Run line).
-      - name: Publish to the Central Portal
+      - name: Import signing key
         env:
-          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
-          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          set -o pipefail
-          ./gradlew publishToMavenCentral | tee publish.log
+          set -euo pipefail
+          printf '%s\n' "$SIGNING_KEY" | gpg --batch --import
+          # Pin the secret key for non-interactive detach-sign.
+          key_id=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')
+          echo "GPG_KEY_ID=$key_id" >> "$GITHUB_ENV"
+          printf '%s\n' "$SIGNING_PASSWORD" >"$RUNNER_TEMP/gpg-pass"
+          echo "GPG_PASSPHRASE_FILE=$RUNNER_TEMP/gpg-pass" >> "$GITHUB_ENV"
 
-      - name: Report the deployment status
+      - name: Promote snapshot repo to release (no rebuild)
+        id: promote
+        env:
+          SNAPSHOT: ${{ steps.ver.outputs.snapshot }}
+          RELEASE: ${{ steps.ver.outputs.release }}
+        run: |
+          set -euo pipefail
+          # Wrap gpg so the promote script signs with the imported key + passphrase.
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '%s\n' \
+            '#!/usr/bin/env bash' \
+            'exec /usr/bin/gpg --batch --yes --pinentry-mode loopback \' \
+            '  --passphrase-file "${GPG_PASSPHRASE_FILE}" \' \
+            '  --local-user "${GPG_KEY_ID}" "$@"' \
+            >"$RUNNER_TEMP/bin/gpg"
+          chmod +x "$RUNNER_TEMP/bin/gpg"
+
+          out="$RUNNER_TEMP/promoted"
+          ./scripts/promote-snapshot-repo.sh \
+            --snapshot-repo "$SNAPSHOT_REPO" \
+            --snapshot-version "$SNAPSHOT" \
+            --release-version "$RELEASE" \
+            --out-dir "$out"
+          echo "bundle=$out/central-bundle.zip" >> "$GITHUB_OUTPUT"
+          echo "jars=$out/jars" >> "$GITHUB_OUTPUT"
+
+      - name: Upload promoted bundle to Central Portal
+        id: upload
         env:
           USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          RELEASE: ${{ steps.ver.outputs.release }}
+          BUNDLE: ${{ steps.promote.outputs.bundle }}
         run: |
-          id=$(sed -n 's/.*deployment id: \([0-9a-f-]*\).*/\1/p' publish.log | head -1)
-          if [ -z "$id" ]; then
-            echo "::error::The publish step reported no deployment id."
-            exit 1
-          fi
-
+          set -euo pipefail
           token=$(printf '%s:%s' "$USERNAME" "$PASSWORD" | base64 -w0)
           echo "::add-mask::$token"
+          name="io.github.lldata:quarkus-connect:${RELEASE}"
+          id=$(curl -sS -X POST \
+            -H "Authorization: Bearer $token" \
+            -F "bundle=@${BUNDLE};type=application/octet-stream" \
+            "https://central.sonatype.com/api/v1/publisher/upload?name=$(printf %s "$name" | jq -sRr @uri)&publishingType=USER_MANAGED")
+          if [[ ! "$id" =~ ^[0-9a-f-]+$ ]]; then
+            echo "::error::Portal upload did not return a deployment id: $id"
+            exit 1
+          fi
+          echo "deployment_id=$id" >> "$GITHUB_OUTPUT"
+          echo "PORTAL_TOKEN=$token" >> "$GITHUB_ENV"
+          echo "Uploaded deployment $id"
 
+      - name: Report the deployment status
+        env:
+          DEPLOYMENT_ID: ${{ steps.upload.outputs.deployment_id }}
+        run: |
+          set -euo pipefail
           state_of='import json,sys; print(json.load(sys.stdin).get("deploymentState",""))'
           errors_of='import json,sys; d=json.load(sys.stdin); e=d.get("errors") or d.get("deploymentErrors"); print(json.dumps(e or d, indent=2))'
-
           for _ in $(seq 1 20); do
-            body=$(curl -sS -X POST -H "Authorization: Bearer $token" \
-              "https://central.sonatype.com/api/v1/publisher/status?id=$id")
+            body=$(curl -sS -X POST -H "Authorization: Bearer $PORTAL_TOKEN" \
+              "https://central.sonatype.com/api/v1/publisher/status?id=$DEPLOYMENT_ID")
             state=$(printf '%s' "$body" | python3 -c "$state_of")
-            echo "deployment $id: ${state:-unknown}"
+            echo "deployment $DEPLOYMENT_ID: ${state:-unknown}"
             case "$state" in
               VALIDATED|PUBLISHED)
                 echo "::notice::Deployment $state — publish it at https://central.sonatype.com/publishing"
@@ -116,15 +212,111 @@ jobs:
             esac
             sleep 15
           done
-
           echo "::warning::Still ${state:-unknown} after five minutes; check the Portal."
 
-      - name: Draft the GitHub release
+      - name: Tag the promoted commit and draft the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          --draft
-          --title "${{ steps.version.outputs.version }}"
-          runtime/build/libs/*.jar
-          deployment/build/libs/*.jar
+          RELEASE: ${{ steps.ver.outputs.release }}
+          SHA: ${{ steps.ver.outputs.sha }}
+          SNAPSHOT: ${{ steps.ver.outputs.snapshot }}
+          JARS: ${{ steps.promote.outputs.jars }}
+        run: |
+          set -euo pipefail
+          tag="v${RELEASE}"
+          git tag -a "$tag" "$SHA" -m "Release ${RELEASE} (promoted from ${SNAPSHOT})"
+          git push origin "$tag"
+          notes="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "Promoted \`${SNAPSHOT}\` at \`${SHA}\` to Maven coordinates"
+            echo "\`io.github.lldata:quarkus-connect:${RELEASE}\` (no rebuild)."
+            echo
+            echo "Central Portal deployment is **USER_MANAGED** — press Publish at"
+            echo "https://central.sonatype.com/publishing when ready."
+            echo
+            echo "## Changelog"
+            echo
+            if grep -q "^## \\[${RELEASE}\\]" CHANGELOG.md; then
+              awk -v ver="$RELEASE" '
+                $0 ~ "^## \\[" ver "\\]" {p=1; next}
+                p && /^## / {exit}
+                p {print}
+              ' CHANGELOG.md
+            else
+              awk '
+                /^## \[Unreleased\]/ {p=1; next}
+                p && /^## / {exit}
+                p {print}
+              ' CHANGELOG.md
+            fi
+          } >"$notes"
+          gh release create "$tag" \
+            --draft \
+            --title "quarkus-connect ${RELEASE}" \
+            --notes-file "$notes" \
+            "$JARS"/*.jar
+
+      - name: Open post-release SNAPSHOT bump PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE: ${{ steps.ver.outputs.release }}
+          SNAPSHOT: ${{ steps.ver.outputs.snapshot }}
+          SHA: ${{ steps.ver.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # Next patch SNAPSHOT after the promoted release (0.1.7 → 0.1.8-SNAPSHOT).
+          IFS=. read -r maj min pat <<<"$RELEASE"
+          next="${maj}.${min}.$((pat + 1))-SNAPSHOT"
+          branch="cursor/post-release-${RELEASE}-a260"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch" "$SHA"
+          today=$(date -u +%F)
+          # gradle.properties: record released line then move main to next SNAPSHOT.
+          sed -i "s/^version=.*/version=${next}/" gradle.properties
+          # CHANGELOG: fold Unreleased into [RELEASE], start new Unreleased for next.
+          python3 - "$RELEASE" "$next" "$today" <<'PY'
+          import pathlib, sys
+          release, nxt, today = sys.argv[1], sys.argv[2], sys.argv[3]
+          path = pathlib.Path("CHANGELOG.md")
+          text = path.read_text()
+          marker = "## [Unreleased]\n"
+          if marker not in text:
+              raise SystemExit("CHANGELOG.md missing ## [Unreleased]")
+          pre, rest = text.split(marker, 1)
+          if rest.startswith("\n"):
+              rest = rest[1:]
+          body, sep, after = rest.partition("\n## ")
+          body = body.rstrip() + "\n"
+          new = (
+              pre
+              + marker
+              + "\n"
+              + "### Changed\n"
+              + f"- Development continues on `{nxt}` after the `{release}` release\n"
+              + "\n"
+              + f"## [{release}] - {today}\n"
+              + "\n"
+              + f"Promoted from `{release}-SNAPSHOT` (CI snapshot artifact; Publish workflow, no rebuild).\n"
+              + "\n"
+              + body
+          )
+          if sep:
+              new += sep + after
+          path.write_text(new)
+          PY
+          git add gradle.properties CHANGELOG.md
+          git commit -m "Bump to ${next} after v${RELEASE}"
+          git push -u origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Bump to ${next} after v${RELEASE}" \
+            --body "$(printf '%s\n' \
+              "## Summary" \
+              "- Post-release bump after Publish promoted \`${SNAPSHOT}\` → \`${RELEASE}\` (tag \`v${RELEASE}\`)." \
+              "- No Central publish in this PR; CI only." \
+              "" \
+              "## Test plan" \
+              "- [ ] CI green → squash-merge")" \
+            || echo "::notice::PR may already exist for $branch"

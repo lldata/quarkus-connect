@@ -1,65 +1,69 @@
-# Release process (no secrets required until publish)
+# Release process
 
-Tagging and Central Portal upload are **human** acts. Agents never tag or publish.
+## Model
 
-Recommended first public version: **`0.1.0`** (semver; still early). Stay on `999-SNAPSHOT` until that bump PR merges.
+| Path | What runs | When |
+| --- | --- | --- |
+| **CI** | `./gradlew check`; on `main` only, `publishToMavenLocal` + upload `snapshot-maven-repo` | Every PR / push — **never** Central publish |
+| **Publish** | Promote newest main SNAPSHOT artifact → release version, Central upload, tag, draft GH release | **`workflow_dispatch` only** (manual or AI) |
 
-## Checklist before a tag
+The Publish workflow **does not rebuild**. It downloads the `snapshot-maven-repo` artifact from the successful CI run for current `main` HEAD, rewrites `X.Y.Z-SNAPSHOT` → `X.Y.Z`, signs with Environment `publish` secrets, and uploads a Central Portal bundle (`USER_MANAGED`).
 
-1. `main` is green: `./gradlew check`
-2. Local coordinates install: `./gradlew publishToMavenLocal`
-3. [CHANGELOG.md](../CHANGELOG.md) has an `[Unreleased]` section ready to become `## [0.1.0] - YYYY-MM-DD` (or the chosen version)
-4. Bump `version=` in `gradle.properties` to the release number (must match the tag without `v`)
-5. Open a PR for the version bump + changelog; merge when green
+Recommended first Central version follows the next SNAPSHOT on `main` (today: promote `0.1.7-SNAPSHOT` → `0.1.7`).
 
-## Path A — GitHub-only (no Central secrets)
+## Checklist before promoting
 
-Use this until `SIGNING_*` / `MAVEN_CENTRAL_*` exist. `publish.yml` **fails closed** on the tag — that is expected and not a blocker for a GitHub Release.
+1. `main` is green and `version=` in `gradle.properties` is `*-SNAPSHOT`
+2. CI for that commit uploaded `snapshot-maven-repo` (push to `main` only)
+3. [CHANGELOG.md](../CHANGELOG.md) `[Unreleased]` describes what will ship
+4. GitHub Environment **`publish`** has non-empty `SIGNING_KEY`, `SIGNING_PASSWORD`, `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`
 
-```bash
-# After the version-bump PR is on main:
-./scripts/package-github-release.sh 0.1.0
-# Script prints the exact `gh release create` command with staged jars + notes.
+## Trigger Publish (manual / AI)
 
-git tag v0.1.0
-git push origin v0.1.0
-# Then run the printed gh release create (or attach jars in the GitHub UI).
-```
-
-Consumers until Central:
-
-| Path | How |
-| --- | --- |
-| `mavenLocal` | `./gradlew publishToMavenLocal` then depend on `io.github.lldata:quarkus-connect:0.1.0` |
-| Source / composite build | Clone tag; `includeBuild` or publishToMavenLocal from the tag |
-| GitHub Release jars | Download attached jars from the release page (not a Maven repo) |
-
-There is no agent-driven publish path.
-
-## Path B — Tag + Maven Central (human + secrets)
+Workflow name: **Publish** (`.github/workflows/publish.yml`).
 
 ```bash
-git tag "v$VERSION"
-git push origin "v$VERSION"
+# Actions UI: Actions → Publish → Run workflow → confirm = promote
+
+gh workflow run Publish \
+  --repo lldata/quarkus-connect \
+  -f confirm=promote
 ```
 
-`.github/workflows/publish.yml` then:
+The run then:
 
-1. Fails closed if `SIGNING_*` / `MAVEN_CENTRAL_*` secrets are missing
-2. Runs `./gradlew check` and `publishToMavenCentral`
-3. Polls the Central Portal until VALIDATED (or fails with Portal errors)
-4. Opens a **draft** GitHub release with the jars
+1. Fails closed if Environment `publish` secrets are missing
+2. Resolves newest snapshot from `main` `gradle.properties` (refuses non-SNAPSHOT or if `v$release` exists)
+3. Downloads CI `snapshot-maven-repo` for that exact commit (refuses older runs)
+4. Promotes / signs / uploads to the Central Portal (no `./gradlew` build)
+5. Tags `v$release` at that commit and opens a **draft** GitHub release with jars
+6. Opens a post-release PR bumping `main` to the next patch `*-SNAPSHOT`
 
 A human presses **Publish** on [central.sonatype.com/publishing](https://central.sonatype.com/publishing).
 There is no automatic release to Maven Central.
 
-## Scope gates for a first release
+## Path A — GitHub-only (no Central secrets)
+
+Use only while Environment `publish` secrets are incomplete. Prefer the packaging script; do **not** run Publish until signing + Central credentials exist.
+
+```bash
+./scripts/package-github-release.sh 0.1.0
+# Script prints gh release create. Tagging is still a deliberate act.
+```
+
+| Path | How |
+| --- | --- |
+| `mavenLocal` | `./gradlew publishToMavenLocal` then depend on the version |
+| Source / composite build | Clone tag; `includeBuild` or publishToMavenLocal from source |
+| GitHub Release jars | Download attached jars (not a Maven repo) |
+
+## Scope gates
 
 | Ready | Item |
 | --- | --- |
 | Yes | Unary Connect + gRPC-Web + server/client/bidi streaming for `@GrpcService` |
 | Yes | Examples + Flutter client + SPI docs |
 | Yes | Curl interop matrix + partial connectconformance host in CI |
-| Yes | Publish plugin + fail-closed workflow + GitHub-only packaging script |
-| Human | Repository secrets (Central) + Claude Code app (optional for agent automation) |
+| Yes | Snapshot staging on main CI + promote-only Publish workflow |
+| Human | Environment `publish` secrets (Central + GPG) |
 | Later | Interactive/chunked stream bodies; brotli/zstd; full conformance matrix |

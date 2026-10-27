@@ -38,9 +38,9 @@ PR.
 House-style automation is mirrored from
 [lldata/quarkus-kotlin-typescript-rest-client-generator](https://github.com/lldata/quarkus-kotlin-typescript-rest-client-generator):
 CI action versions, JDK 21 / JVM 17, Dependabot + auto-merge, CODEOWNERS, trusted-authors,
-tag-gated Central publish (`com.vanniktech.maven.publish`), and agent tend/issue/review/claude
-workflows. Agent jobs need repository secret `CLAUDE_CODE_OAUTH_TOKEN`; without it they fail
-closed rather than inventing work.
+workflow_dispatch Central publish (`com.vanniktech.maven.publish`, Environment `publish`), and
+agent tend/issue/review/claude workflows. Agent jobs need repository secret
+`CLAUDE_CODE_OAUTH_TOKEN`; without it they fail closed rather than inventing work.
 
 
 ## Bearing
@@ -104,9 +104,10 @@ PR.
 - Do not merge PRs that touch `.github/`, `AGENTS.md`, root `build.gradle.kts`, or
   `gradle.properties` without human (`@lldata`) review — CODEOWNERS enforces this.
 - Prefer squash merge. Arm auto-merge only when CI is green and CODEOWNERS does not block.
-- Never tag. Never publish. Tagging and Central Portal upload are human acts; `publish.yml`
-  fails closed without `SIGNING_*` / `MAVEN_CENTRAL_*` secrets and uploads a Portal draft
-  (not an automatic release).
+- Never run Central publish from CI. Release is **`workflow_dispatch`** on the **Publish**
+  workflow only (manual or AI): it promotes the newest main SNAPSHOT CI artifact — no
+  rebuild. It fails closed without Environment `publish` secrets (`SIGNING_*` /
+  `MAVEN_CENTRAL_*`) and uploads a Portal draft (not an automatic Maven Central release).
 
 
 ## License
@@ -118,8 +119,9 @@ Apache License 2.0 only (`LICENSE`, README badge, Gradle coordinates).
 
 - Plugin: `com.vanniktech.maven.publish` on `:quarkus-connect` and `:quarkus-connect-deployment`.
 - Local try-out: `./gradlew publishToMavenLocal` (no signing key required for SNAPSHOT).
-- Release: human bumps `version=` in `gradle.properties`, tags `v$version`, Portal waits for
-  Publish. See `.github/workflows/publish.yml`.
+- CI on `main` stages that Maven-local tree as artifact `snapshot-maven-repo`.
+- Release: `gh workflow run Publish -f confirm=promote` (or Actions UI). Promotes newest
+  main `*-SNAPSHOT` → release version, tags, draft GitHub release. See `docs/RELEASE.md`.
 
 
 ## Known gaps (do not pretend these are done)
