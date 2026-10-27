@@ -106,11 +106,18 @@ object GrpcUnaryInvoker {
             listener.onHalfClose()
 
             if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                // Micrometer / Quarkus gRPC metrics record processing.duration in
+                // onCancel / onComplete — without this the timer never fires for Connect.
+                listener.onCancel()
                 throw ConnectException(
                     io.github.lldata.connect.spi.ConnectCode.DEADLINE_EXCEEDED,
                     "RPC timed out after ${timeoutMs}ms",
                 )
             }
+
+            // Transport normally signals completion after close(); our bridge owns that
+            // lifecycle, so notify interceptors here (grpc.server.processing.duration).
+            listener.onComplete()
 
             errorRef.get()?.let { throw GrpcStatusMapping.toConnectException(it) }
             @Suppress("UNCHECKED_CAST")
