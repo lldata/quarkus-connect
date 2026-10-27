@@ -42,6 +42,29 @@ The run then:
 A human presses **Publish** on [central.sonatype.com/publishing](https://central.sonatype.com/publishing).
 There is no automatic release to Maven Central.
 
+## Recovery — Central VALIDATED, tag missing
+
+If Portal upload reached **VALIDATED** but the annotated tag / draft GitHub release step
+failed (for example empty `user.name` / `user.email` before `git tag -a`), **do not**
+re-run a full promote. That would upload a second Central deployment for the same
+version.
+
+After this workflow fix is on `main`, finish GitHub-only (no Portal upload):
+
+```bash
+gh workflow run Publish \
+  --repo lldata/quarkus-connect \
+  -f confirm=promote \
+  -f github_only=true
+```
+
+That path still downloads the CI snapshot, rewrites jars for the draft release
+(`--skip-sign`), creates `v$release` + draft GH release, and opens the post-release
+SNAPSHOT bump PR. Press **Publish** on the existing Portal deployment when ready.
+
+If `v$release` already exists, Publish refuses to re-release — create or edit the
+draft GH release by hand if only that piece is missing.
+
 ## Path A — GitHub-only (no Central secrets)
 
 Use only while Environment `publish` secrets are incomplete. Prefer the packaging script; do **not** run Publish until signing + Central credentials exist.
