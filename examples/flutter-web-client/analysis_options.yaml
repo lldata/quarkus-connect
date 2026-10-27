@@ -4,6 +4,10 @@ analyzer:
   exclude:
     - lib/src/gen/**/*.pbserver.dart
     - lib/src/gen/**/*.pbjson.dart
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
 
 linter:
   rules:
