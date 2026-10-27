@@ -57,3 +57,13 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 }
+
+// Promote-script smoke test (#63): rewrite quarkus-extension.* and refuse SNAPSHOT leftovers.
+tasks.register<Exec>("testPromoteSnapshotRepo") {
+    workingDir = rootProject.projectDir
+    commandLine("bash", "scripts/test-promote-snapshot-repo.sh")
+}
+
+tasks.named("check") {
+    dependsOn("testPromoteSnapshotRepo")
+}
