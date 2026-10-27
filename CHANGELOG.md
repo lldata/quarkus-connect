@@ -12,6 +12,9 @@ version is tagged.
 - Development continues on `0.1.8-SNAPSHOT` after the `0.1.7` release
 
 ### Fixed
+- Publish promote rewrites `META-INF/quarkus-extension.properties` / `.yaml` (and refuses
+  leftover `-SNAPSHOT`) so a released runtime jar points at the release deployment
+  artifact, not `*-SNAPSHOT` (#63). Do not re-upload broken `0.1.7`; ship `0.1.8`.
 - Connect unary GET is served only for methods with `idempotency_level = NO_SIDE_EFFECTS`
   (otherwise HTTP 405 `Allow: POST`, matching connect-go) (#51)
 

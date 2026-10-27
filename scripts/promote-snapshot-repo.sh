@@ -75,24 +75,84 @@ sign_file() {
   gpg --batch --yes --detach-sign --armor -o "${f}.asc" "$f"
 }
 
-rewrite_embedded_pom() {
+# Text entries inside jars that embed the project version and must be rewritten
+# on promote. Quarkus consumers read deployment-artifact from
+# META-INF/quarkus-extension.properties at build time — leaving a SNAPSHOT
+# there makes a released runtime jar unusable (#63).
+rewrite_jar_entry() {
+  local jar="$1"
+  local entry="$2"
+  local tmp="$3"
+  jar tf "$jar" | grep -qxF "$entry" || return 0
+  mkdir -p "$tmp/$(dirname "$entry")"
+  unzip -p "$jar" "$entry" \
+    | sed "s/${SNAPSHOT_VERSION}/${RELEASE_VERSION}/g" \
+    >"$tmp/$entry"
+  jar uf "$jar" -C "$tmp" "$entry"
+}
+
+rewrite_embedded_versions() {
   local jar="$1"
   local artifact="$2"
   local tmp
   tmp="$(mktemp -d)"
-  # Best-effort: update META-INF/maven pom so coordinates match the release.
-  if jar tf "$jar" | grep -q "META-INF/maven/io.github.lldata/${artifact}/pom.xml"; then
-    mkdir -p "$tmp/META-INF/maven/io.github.lldata/${artifact}"
-    unzip -p "$jar" "META-INF/maven/io.github.lldata/${artifact}/pom.xml" \
-      | sed "s/${SNAPSHOT_VERSION}/${RELEASE_VERSION}/g" \
-      >"$tmp/META-INF/maven/io.github.lldata/${artifact}/pom.xml"
-    unzip -p "$jar" "META-INF/maven/io.github.lldata/${artifact}/pom.properties" \
-      | sed "s/${SNAPSHOT_VERSION}/${RELEASE_VERSION}/g" \
-      >"$tmp/META-INF/maven/io.github.lldata/${artifact}/pom.properties"
-    jar uf "$jar" -C "$tmp" "META-INF/maven/io.github.lldata/${artifact}/pom.xml"
-    jar uf "$jar" -C "$tmp" "META-INF/maven/io.github.lldata/${artifact}/pom.properties"
-  fi
+  rewrite_jar_entry "$jar" "META-INF/maven/io.github.lldata/${artifact}/pom.xml" "$tmp"
+  rewrite_jar_entry "$jar" "META-INF/maven/io.github.lldata/${artifact}/pom.properties" "$tmp"
+  rewrite_jar_entry "$jar" "META-INF/quarkus-extension.properties" "$tmp"
+  rewrite_jar_entry "$jar" "META-INF/quarkus-extension.yaml" "$tmp"
   rm -rf "$tmp"
+}
+
+# True when a jar entry name is text metadata we should scan for leftover SNAPSHOT.
+is_text_jar_entry() {
+  case "$1" in
+    *.properties|*.xml|*.yaml|*.yml|*.MF|*.txt|*.md|*.json|*.module|*.pom|pom.xml|pom.properties)
+      return 0
+      ;;
+    META-INF/MANIFEST.MF|META-INF/quarkus-extension.properties|META-INF/quarkus-extension.yaml)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+# Fail closed if any promoted jar or accompanying POM/module still names the
+# SNAPSHOT version (covers quarkus-extension.* and anything else we missed).
+assert_no_snapshot_left() {
+  local root="$1"
+  local found=0
+  local f
+  while IFS= read -r -d '' f; do
+    case "$f" in
+      *.jar)
+        if unzip -l "$f" >/dev/null 2>&1; then
+          local listing entry
+          listing="$(unzip -Z1 "$f" 2>/dev/null || true)"
+          while IFS= read -r entry; do
+            [[ -n "$entry" && "$entry" != */ ]] || continue
+            is_text_jar_entry "$entry" || continue
+            if unzip -p "$f" "$entry" 2>/dev/null | grep -qF "$SNAPSHOT_VERSION"; then
+              echo "SNAPSHOT version '$SNAPSHOT_VERSION' still present in $f → $entry" >&2
+              found=1
+            fi
+          done <<<"$listing"
+        fi
+        ;;
+      *.pom|*.module|*.xml|*.properties|*.yaml|*.yml)
+        if grep -qF "$SNAPSHOT_VERSION" "$f"; then
+          echo "SNAPSHOT version '$SNAPSHOT_VERSION' still present in $f" >&2
+          found=1
+        fi
+        ;;
+    esac
+  done < <(find "$root" -type f \( \
+    -name '*.jar' -o -name '*.pom' -o -name '*.module' \
+    -o -name '*.xml' -o -name '*.properties' -o -name '*.yaml' -o -name '*.yml' \
+  \) -print0)
+  if [[ "$found" -ne 0 ]]; then
+    echo "Promote refused: release artifacts must not mention $SNAPSHOT_VERSION" >&2
+    exit 1
+  fi
 }
 
 for artifact in "${ARTIFACTS[@]}"; do
@@ -126,7 +186,7 @@ for artifact in "${ARTIFACTS[@]}"; do
 
   for jar in "$dest"/*.jar; do
     [[ -f "$jar" ]] || continue
-    rewrite_embedded_pom "$jar" "$artifact"
+    rewrite_embedded_versions "$jar" "$artifact"
     # Stash jars for the GitHub release attachment step.
     cp -a "$jar" "$OUT_DIR/jars/"
   done
@@ -147,6 +207,8 @@ for artifact in "${ARTIFACTS[@]}"; do
 
   echo "Promoted $artifact $SNAPSHOT_VERSION → $RELEASE_VERSION" >&2
 done
+
+assert_no_snapshot_left "$STAGE"
 
 # Zip the Maven repo layout so archive entries start at io/...
 (

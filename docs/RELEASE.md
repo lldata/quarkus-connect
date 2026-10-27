@@ -7,9 +7,9 @@
 | **CI** | `./gradlew check`; on `main` only, `publishToMavenLocal` + upload `snapshot-maven-repo` | Every PR / push — **never** Central publish |
 | **Publish** | Promote newest main SNAPSHOT artifact → release version, Central upload, tag, draft GH release | **`workflow_dispatch` only** (manual or AI) |
 
-The Publish workflow **does not rebuild**. It downloads the `snapshot-maven-repo` artifact from the successful CI run for current `main` HEAD, rewrites `X.Y.Z-SNAPSHOT` → `X.Y.Z`, signs with Environment `publish` secrets, and uploads a Central Portal bundle (`USER_MANAGED`).
+The Publish workflow **does not rebuild**. It downloads the `snapshot-maven-repo` artifact from the successful CI run for current `main` HEAD, rewrites `X.Y.Z-SNAPSHOT` → `X.Y.Z` (POMs, Gradle module metadata, embedded `META-INF/maven/**`, and Quarkus `META-INF/quarkus-extension.properties` / `.yaml`), signs with Environment `publish` secrets, and uploads a Central Portal bundle (`USER_MANAGED`). Promote fails closed if any promoted jar/POM still mentions the SNAPSHOT version.
 
-Recommended first Central version follows the next SNAPSHOT on `main` (today: promote `0.1.7-SNAPSHOT` → `0.1.7`).
+Recommended next Central version: promote `0.1.8-SNAPSHOT` → `0.1.8` (see recovery below for why not to re-ship `0.1.7`).
 
 ## Checklist before promoting
 
@@ -41,6 +41,24 @@ The run then:
 
 A human presses **Publish** on [central.sonatype.com/publishing](https://central.sonatype.com/publishing).
 There is no automatic release to Maven Central.
+
+## Recovery — `0.1.7` shipped with SNAPSHOT deployment-artifact (#63)
+
+Maven Central `io.github.lldata:quarkus-connect:0.1.7` embeds
+`deployment-artifact=…:quarkus-connect-deployment:0.1.7-SNAPSHOT` in
+`META-INF/quarkus-extension.properties`. Do **not** re-upload `0.1.7` (Central
+coordinates are immutable; a second Portal deployment for the same version is the
+wrong fix).
+
+Plan:
+
+1. Land the promote-script fix on `main` (rewrite `quarkus-extension.*` + SNAPSHOT assert).
+2. Keep consumers on a workaround until `0.1.8` is published: depend on
+   `0.1.8-SNAPSHOT` from a local/`publishToMavenLocal` build, or pin both runtime and
+   deployment jars explicitly from source — not Central `0.1.7`.
+3. When ready, run Publish to promote `0.1.8-SNAPSHOT` → `0.1.8` (new tag, new Central
+   coordinates). Verify the published runtime jar's
+   `META-INF/quarkus-extension.properties` names `quarkus-connect-deployment:0.1.8`.
 
 ## Recovery — Central VALIDATED, tag missing
 
