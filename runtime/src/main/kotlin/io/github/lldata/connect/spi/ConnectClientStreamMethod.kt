@@ -14,8 +14,9 @@ interface ConnectClientStreamMethod<Req : Message, Res : Message> {
     fun responseType(): Class<Res>
 
     /**
-     * Handle a client-streaming call. [requests] is the full sequence of messages
-     * from the Connect request body (already decoded).
+     * Handle a client-streaming call. [requests] is the full sequence of decoded
+     * messages. The HTTP layer streams envelopes; SPI beans see the collected list.
+     * `@GrpcService` bridges use an incremental path instead of this list API.
      */
     fun handle(requests: List<Req>, context: ConnectCallContext): Res
 }

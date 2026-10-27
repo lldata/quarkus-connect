@@ -26,6 +26,10 @@ class GrpcBridgedClientStreamMethod<ReqT : Message, RespT : Message>(
     override fun handle(requests: List<ReqT>, context: ConnectCallContext): RespT =
         GrpcClientStreamInvoker.invoke(method, interceptors, requests, context)
 
+    /** Open a streaming inbound session (messages fed as HTTP envelopes arrive). */
+    fun open(context: ConnectCallContext, onWritable: (() -> Unit)? = null): OpenClientStream<ReqT, RespT> =
+        GrpcClientStreamInvoker.open(method, interceptors, context, onWritable)
+
     companion object {
         @JvmStatic
         fun <ReqT, RespT> from(

@@ -3,33 +3,37 @@ package io.github.lldata.connect.runtime.grpc
 import io.github.lldata.connect.runtime.StreamCallControl
 import io.github.lldata.connect.runtime.security.ConnectSecuritySupport
 import io.github.lldata.connect.spi.ConnectCallContext
-import io.github.lldata.connect.spi.ConnectCode
-import io.github.lldata.connect.spi.ConnectException
 import io.github.lldata.connect.spi.ConnectStreamObserver
-import io.grpc.Context
-import io.grpc.Metadata
-import io.grpc.MethodDescriptor
-import io.grpc.ServerCall
-import io.grpc.ServerCallHandler
 import io.grpc.ServerInterceptor
 import io.grpc.ServerInterceptors
 import io.grpc.ServerMethodDefinition
 import io.grpc.ServerServiceDefinition
-import io.grpc.Status
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Invokes a gRPC BIDI_STREAMING [ServerMethodDefinition] through optional interceptors.
  *
- * Vertical slice: all request messages are delivered up-front, then the call is
- * half-closed; each response message is forwarded to [observer].
+ * Prefer [open] so request messages can be fed as HTTP envelopes arrive; [invoke] remains
+ * for the SPI list path (collect-then-handle).
  */
 object GrpcBidiStreamInvoker {
 
-    private val DEADLINE_SCHEDULER = Executors.newSingleThreadScheduledExecutor { r ->
-        Thread(r, "connect-bidi-deadline").apply { isDaemon = true }
+    fun <ReqT, RespT> open(
+        method: ServerMethodDefinition<ReqT, RespT>,
+        interceptors: List<ServerInterceptor>,
+        context: ConnectCallContext,
+        observer: ConnectStreamObserver<RespT>,
+        callControl: StreamCallControl? = null,
+        onWritable: (() -> Unit)? = null,
+    ): OpenBidiStream<ReqT, RespT> = ConnectSecuritySupport.withRequestContext {
+        val typed = resolve(method, interceptors)
+        OpenBidiStream(
+            typed.methodDescriptor,
+            typed.serverCallHandler,
+            context,
+            observer,
+            callControl,
+            onWritable = onWritable,
+        )
     }
 
     fun <ReqT, RespT> invoke(
@@ -39,7 +43,18 @@ object GrpcBidiStreamInvoker {
         context: ConnectCallContext,
         observer: ConnectStreamObserver<RespT>,
         callControl: StreamCallControl? = null,
-    ) = ConnectSecuritySupport.withRequestContext {
+    ) {
+        val session = open(method, interceptors, context, observer, callControl)
+        for (request in requests) {
+            session.send(request)
+        }
+        session.halfClose()
+    }
+
+    private fun <ReqT, RespT> resolve(
+        method: ServerMethodDefinition<ReqT, RespT>,
+        interceptors: List<ServerInterceptor>,
+    ): ServerMethodDefinition<ReqT, RespT> {
         val definition = if (interceptors.isEmpty()) {
             ServerServiceDefinition.builder("connect-bidi-bridge")
                 .addMethod(method)
@@ -53,98 +68,7 @@ object GrpcBidiStreamInvoker {
             intercepted.getMethod(method.methodDescriptor.fullMethodName)
                 ?: error("Intercepted bidi method missing: ${method.methodDescriptor.fullMethodName}")
         }
-
         @Suppress("UNCHECKED_CAST")
-        val typed = definition as ServerMethodDefinition<ReqT, RespT>
-        invokeHandler(typed.methodDescriptor, typed.serverCallHandler, requests, context, observer, callControl)
+        return definition as ServerMethodDefinition<ReqT, RespT>
     }
-
-    private fun <ReqT, RespT> invokeHandler(
-        descriptor: MethodDescriptor<ReqT, RespT>,
-        handler: ServerCallHandler<ReqT, RespT>,
-        requests: List<ReqT>,
-        context: ConnectCallContext,
-        observer: ConnectStreamObserver<RespT>,
-        callControl: StreamCallControl?,
-    ) {
-        val timeoutMs = context.timeoutMs ?: 60_000L
-        val deadlineCtx = Context.current().withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS, DEADLINE_SCHEDULER)
-        callControl?.attachGrpcCancel { deadlineCtx.cancel(Status.CANCELLED.asRuntimeException()) }
-        val previous = deadlineCtx.attach()
-        val finished = AtomicBoolean(false)
-
-        val headers = toMetadata(context.requestHeaders)
-        val call = object : ServerCall<ReqT, RespT>() {
-            override fun request(numMessages: Int) = Unit
-
-            override fun sendHeaders(headers: Metadata) {
-                GrpcMetadataCopy.headersToContext(headers, context)
-            }
-
-            override fun sendMessage(message: RespT) {
-                if (!finished.get() && callControl?.isCancelled() != true) {
-                    observer.onNext(message)
-                }
-            }
-
-            override fun close(status: Status, trailers: Metadata) {
-                if (!finished.compareAndSet(false, true)) return
-                try {
-                    GrpcMetadataCopy.trailersToContext(trailers, context)
-                    if (callControl?.isCancelled() == true) {
-                        observer.onError(ConnectException(ConnectCode.CANCELED, "Client cancelled the stream"))
-                    } else if (status.isOk) {
-                        observer.onCompleted()
-                    } else {
-                        observer.onError(GrpcStatusMapping.toConnectException(status.asRuntimeException(trailers)))
-                    }
-                } finally {
-                    deadlineCtx.detach(previous)
-                    deadlineCtx.cancel(null)
-                }
-            }
-
-            override fun isCancelled(): Boolean =
-                deadlineCtx.isCancelled || finished.get() || callControl?.isCancelled() == true
-
-            override fun getMethodDescriptor(): MethodDescriptor<ReqT, RespT> = descriptor
-        }
-
-        try {
-            val listener = handler.startCall(call, headers)
-            listener.onReady()
-            for (request in requests) {
-                listener.onMessage(request)
-            }
-            listener.onHalfClose()
-        } catch (e: Exception) {
-            if (finished.compareAndSet(false, true)) {
-                deadlineCtx.detach(previous)
-                deadlineCtx.cancel(null)
-                observer.onError(GrpcStatusMapping.toConnectException(e))
-            }
-        }
-    }
-
-    private fun toMetadata(headers: Map<String, List<String>>): Metadata {
-        val metadata = Metadata()
-        for ((name, values) in headers) {
-            val lower = name.lowercase()
-            if (lower in HOP_BY_HOP || lower.startsWith(":")) continue
-            if (lower.endsWith(Metadata.BINARY_HEADER_SUFFIX)) continue
-            val key = Metadata.Key.of(lower, Metadata.ASCII_STRING_MARSHALLER)
-            for (value in values) {
-                metadata.put(key, value)
-            }
-        }
-        return metadata
-    }
-
-    private val HOP_BY_HOP = setOf(
-        "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-        "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length",
-        "content-type", "accept", "accept-encoding", "content-encoding",
-        "connect-protocol-version", "connect-content-encoding",
-        "connect-accept-encoding",
-    )
 }

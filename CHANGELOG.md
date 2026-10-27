@@ -15,6 +15,8 @@ version is tagged.
   each Connect / gRPC-Web streaming envelope; oversize → `resource_exhausted` (#44). Conformance
   `supportsMessageReceiveLimit` enabled. Native gRPC also enforces the limit post-decompress
   via `ConnectGrpcMaxInboundInterceptor` (gzip wire size can be under Netty's framed limit).
+- Client and bidi Connect / gRPC-Web request bodies stream envelopes into the gRPC bridge as
+  they arrive (Vert.x pause/resume back-pressure); no full-body buffer (#43).
 
 ### Changed
 - Development continues on `0.1.7-SNAPSHOT` after the `0.1.6` GitHub release

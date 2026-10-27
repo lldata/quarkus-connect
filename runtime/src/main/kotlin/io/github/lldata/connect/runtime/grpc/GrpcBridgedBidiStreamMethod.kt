@@ -30,6 +30,16 @@ class GrpcBridgedBidiStreamMethod<ReqT : Message, RespT : Message>(
         GrpcBidiStreamInvoker.invoke(method, interceptors, requests, context, response, control)
     }
 
+    /** Open a streaming inbound session (messages fed as HTTP envelopes arrive). */
+    fun open(
+        context: ConnectCallContext,
+        response: ConnectStreamObserver<RespT>,
+        onWritable: (() -> Unit)? = null,
+    ): OpenBidiStream<ReqT, RespT> {
+        val control = (context as? DefaultConnectCallContext)?.streamCallControl
+        return GrpcBidiStreamInvoker.open(method, interceptors, context, response, control, onWritable)
+    }
+
     companion object {
         @JvmStatic
         fun <ReqT, RespT> from(

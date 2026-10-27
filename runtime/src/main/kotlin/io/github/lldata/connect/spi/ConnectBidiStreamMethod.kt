@@ -5,9 +5,10 @@ import com.google.protobuf.Message
 /**
  * Java-friendly SPI for a Connect **bidirectional-streaming** method.
  *
- * The vertical-slice HTTP handler buffers the request body, then invokes
- * [handle] with the full request list while [response] receives zero or more
- * outbound messages (same observer contract as server streaming).
+ * HTTP envelopes are parsed as they arrive. CDI SPI beans still receive the
+ * collected request list in [handle]; `@GrpcService` bridges feed `onMessage`
+ * incrementally. [response] receives zero or more outbound messages (same
+ * observer contract as server streaming).
  */
 interface ConnectBidiStreamMethod<Req : Message, Res : Message> {
     fun procedure(): String

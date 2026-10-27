@@ -50,4 +50,7 @@ dependencies {
     implementation("com.google.api.grpc:proto-google-common-protos")
 
     annotationProcessor("io.quarkus:quarkus-extension-processor:$quarkusVersion")
+
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 }

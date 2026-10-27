@@ -128,7 +128,7 @@ Apache License 2.0 only (`LICENSE`, README badge, Gradle coordinates).
 
 - Central / signing repository secrets may still be unset — publish fails closed until they exist.
 - Agent automation needs `CLAUDE_CODE_OAUTH_TOKEN` + Claude Code GitHub App — model jobs skip without them.
-- Client/bidi Connect requests currently buffer the full body (fine for demos; large/interactive later).
+- Client/bidi Connect / gRPC-Web requests stream envelopes as they arrive (see #43); SPI list beans still collect decoded messages.
 - Connect message compression is gzip+identity; brotli deferred (see `docs/COMPLIANCE.md`).
 - Quarkus platform version is pinned deliberately; re-bump with care.
 - See [docs/RELEASE.md](docs/RELEASE.md) before the first tagged release.
