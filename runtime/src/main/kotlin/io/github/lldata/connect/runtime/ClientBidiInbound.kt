@@ -43,15 +43,15 @@ internal object ClientBidiInbound {
         if (typed is GrpcBridgedClientStreamMethod<*, *>) {
             @Suppress("UNCHECKED_CAST")
             val bridge = typed as GrpcBridgedClientStreamMethod<Message, Message>
-            val sessionRef = AtomicReference<OpenClientStream<Message, Message>>()
             val held = AtomicReference<Message?>(null)
+            val sessionRef = AtomicReference<OpenClientStream<Message, Message>>()
 
-            fun resumeIfPossible() {
+            val session = bridge.open(callContext) {
                 vertx.runOnContext {
-                    val session = sessionRef.get() ?: return@runOnContext
+                    val s = sessionRef.get() ?: return@runOnContext
                     val pending = held.getAndSet(null)
                     if (pending != null) {
-                        if (session.trySend(pending)) {
+                        if (s.trySend(pending)) {
                             if (!req.isEnded) req.resume()
                         } else {
                             held.set(pending)
@@ -61,9 +61,21 @@ internal object ClientBidiInbound {
                     }
                 }
             }
-
-            val session = bridge.open(callContext, onWritable = ::resumeIfPossible)
             sessionRef.set(session)
+
+            // Start the Vert.x worker that drives gRPC before HTTP bytes arrive.
+            vertx.executeBlocking(
+                java.util.concurrent.Callable {
+                    codecs.encode(session.runAndAwait(), codec)
+                },
+                false,
+            ).onComplete { ar ->
+                if (ar.succeeded()) {
+                    onResponse(ar.result()!!)
+                } else {
+                    onError(GrpcStatusMapping.toConnectException(ar.cause()))
+                }
+            }
 
             StreamingRequestReader.read(
                 ctx = ctx,
@@ -79,18 +91,6 @@ internal object ClientBidiInbound {
                 },
                 onEnd = {
                     session.halfClose()
-                    vertx.executeBlocking(
-                        java.util.concurrent.Callable {
-                            codecs.encode(session.awaitResponse(), codec)
-                        },
-                        false,
-                    ).onComplete { ar ->
-                        if (ar.succeeded()) {
-                            onResponse(ar.result())
-                        } else {
-                            onError(GrpcStatusMapping.toConnectException(ar.cause()))
-                        }
-                    }
                 },
                 onError = { err ->
                     session.cancel()
@@ -100,7 +100,6 @@ internal object ClientBidiInbound {
             return
         }
 
-        // SPI beans: collect decoded messages (not the raw HTTP body), then handle(List).
         val collected = mutableListOf<Message>()
         StreamingRequestReader.read(
             ctx = ctx,
@@ -118,7 +117,7 @@ internal object ClientBidiInbound {
                     false,
                 ).onComplete { ar ->
                     if (ar.succeeded()) {
-                        onResponse(ar.result())
+                        onResponse(ar.result()!!)
                     } else {
                         onError(GrpcStatusMapping.toConnectException(ar.cause()))
                     }
@@ -148,12 +147,11 @@ internal object ClientBidiInbound {
         if (typed is GrpcBridgedBidiStreamMethod<*, *>) {
             @Suppress("UNCHECKED_CAST")
             val bridge = typed as GrpcBridgedBidiStreamMethod<Message, Message>
-            val sessionRef = AtomicReference<OpenBidiStream<Message, Message>>()
             val held = AtomicReference<Message?>(null)
 
-            fun resumeIfPossible() {
+            lateinit var session: OpenBidiStream<Message, Message>
+            session = bridge.open(callContext, observer) {
                 vertx.runOnContext {
-                    val session = sessionRef.get() ?: return@runOnContext
                     val pending = held.getAndSet(null)
                     if (pending != null) {
                         if (session.trySend(pending)) {
@@ -167,8 +165,17 @@ internal object ClientBidiInbound {
                 }
             }
 
-            val session = bridge.open(callContext, observer, onWritable = ::resumeIfPossible)
-            sessionRef.set(session)
+            vertx.executeBlocking(
+                java.util.concurrent.Callable {
+                    session.run()
+                    null
+                },
+                false,
+            ).onComplete { ar ->
+                if (ar.failed()) {
+                    onInboundError(GrpcStatusMapping.toConnectException(ar.cause()))
+                }
+            }
 
             StreamingRequestReader.read(
                 ctx = ctx,

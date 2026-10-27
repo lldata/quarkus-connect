@@ -1,6 +1,5 @@
 package io.github.lldata.connect.runtime.grpc
 
-import io.github.lldata.connect.runtime.security.ConnectSecuritySupport
 import io.github.lldata.connect.spi.ConnectCallContext
 import io.grpc.ServerInterceptor
 import io.grpc.ServerInterceptors
@@ -20,9 +19,10 @@ object GrpcClientStreamInvoker {
         interceptors: List<ServerInterceptor>,
         context: ConnectCallContext,
         onWritable: (() -> Unit)? = null,
-    ): OpenClientStream<ReqT, RespT> = ConnectSecuritySupport.withRequestContext {
+    ): OpenClientStream<ReqT, RespT> {
+        // Request context is activated on the stream worker inside [OpenClientStream].
         val typed = resolve(method, interceptors)
-        OpenClientStream(typed.methodDescriptor, typed.serverCallHandler, context, onWritable = onWritable)
+        return OpenClientStream(typed.methodDescriptor, typed.serverCallHandler, context, onWritable = onWritable)
     }
 
     fun <ReqT, RespT> invoke(
@@ -36,7 +36,7 @@ object GrpcClientStreamInvoker {
             session.send(request)
         }
         session.halfClose()
-        return session.awaitResponse()
+        return session.runAndAwait()
     }
 
     private fun <ReqT, RespT> resolve(

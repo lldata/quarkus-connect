@@ -1,5 +1,6 @@
 package io.github.lldata.connect.runtime.grpc
 
+import io.github.lldata.connect.runtime.security.ConnectSecuritySupport
 import io.github.lldata.connect.spi.ConnectCallContext
 import io.github.lldata.connect.spi.ConnectCode
 import io.github.lldata.connect.spi.ConnectException
@@ -17,13 +18,15 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Open client-streaming gRPC call that accepts messages as envelopes arrive,
- * then [halfClose] when the HTTP request ends.
+ * Open client-streaming gRPC call. Construct on any thread, then call [runAndAwait]
+ * from a Vert.x worker (`executeBlocking`) so interceptors see a Vert.x context.
+ * Feed [trySend] from the event loop as envelopes arrive; [halfClose] when the HTTP
+ * request ends.
  */
 class OpenClientStream<ReqT, RespT> internal constructor(
-    descriptor: MethodDescriptor<ReqT, RespT>,
-    handler: ServerCallHandler<ReqT, RespT>,
-    context: ConnectCallContext,
+    private val descriptor: MethodDescriptor<ReqT, RespT>,
+    private val handler: ServerCallHandler<ReqT, RespT>,
+    private val context: ConnectCallContext,
     queueCapacity: Int = DEFAULT_QUEUE_CAPACITY,
     private val onWritable: (() -> Unit)? = null,
 ) {
@@ -35,71 +38,6 @@ class OpenClientStream<ReqT, RespT> internal constructor(
     private val queued = AtomicInteger(0)
     private val resumeAt = (queueCapacity / 2).coerceAtLeast(1)
     private val timeoutMs = context.timeoutMs ?: 60_000L
-    private val deadlineCtx =
-        Context.current().withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS, DEADLINE_SCHEDULER)
-    private val previous: Context = deadlineCtx.attach()
-
-    init {
-        val headers = toMetadata(context.requestHeaders)
-        val call = object : ServerCall<ReqT, RespT>() {
-            private var callClosed = false
-
-            override fun request(numMessages: Int) = Unit
-
-            override fun sendHeaders(headers: Metadata) {
-                GrpcMetadataCopy.headersToContext(headers, context)
-            }
-
-            override fun sendMessage(message: RespT) {
-                responseRef.set(message)
-            }
-
-            override fun close(status: Status, trailers: Metadata) {
-                if (callClosed) return
-                callClosed = true
-                GrpcMetadataCopy.trailersToContext(trailers, context)
-                if (!status.isOk) {
-                    errorRef.set(status.asRuntimeException(trailers))
-                }
-                latch.countDown()
-            }
-
-            override fun isCancelled(): Boolean = deadlineCtx.isCancelled
-
-            override fun getMethodDescriptor(): MethodDescriptor<ReqT, RespT> = descriptor
-        }
-
-        WORKER.execute {
-            try {
-                val listener = handler.startCall(call, headers)
-                listener.onReady()
-                while (true) {
-                    val item = inbound.take()
-                    val left = queued.decrementAndGet()
-                    if (left == resumeAt) {
-                        onWritable?.invoke()
-                    }
-                    when (item) {
-                        HalfClose -> {
-                            listener.onHalfClose()
-                            break
-                        }
-                        is CancelSignal -> {
-                            listener.onCancel()
-                            break
-                        }
-                        else -> {
-                            @Suppress("UNCHECKED_CAST")
-                            listener.onMessage(item as ReqT)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                errorRef.compareAndSet(null, e)
-                latch.countDown()
-            }
-        }
-    }
 
     fun trySend(message: ReqT): Boolean {
         if (closed.get()) return true
@@ -117,8 +55,6 @@ class OpenClientStream<ReqT, RespT> internal constructor(
         inbound.put(message)
     }
 
-    fun queuedCount(): Int = queued.get()
-
     fun halfClose() {
         if (closed.compareAndSet(false, true)) {
             queued.incrementAndGet()
@@ -135,13 +71,73 @@ class OpenClientStream<ReqT, RespT> internal constructor(
         }
     }
 
-    fun awaitResponse(): RespT {
+    /**
+     * Runs the gRPC call on the current thread (must be a Vert.x worker) until the
+     * response is ready. Call from `vertx.executeBlocking`.
+     */
+    fun runAndAwait(): RespT = ConnectSecuritySupport.withRequestContext {
+        val deadlineCtx =
+            Context.current().withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS, DEADLINE_SCHEDULER)
+        val previous = deadlineCtx.attach()
         try {
+            val headers = toMetadata(context.requestHeaders)
+            val call = object : ServerCall<ReqT, RespT>() {
+                private var callClosed = false
+
+                override fun request(numMessages: Int) = Unit
+
+                override fun sendHeaders(headers: Metadata) {
+                    GrpcMetadataCopy.headersToContext(headers, context)
+                }
+
+                override fun sendMessage(message: RespT) {
+                    responseRef.set(message)
+                }
+
+                override fun close(status: Status, trailers: Metadata) {
+                    if (callClosed) return
+                    callClosed = true
+                    GrpcMetadataCopy.trailersToContext(trailers, context)
+                    if (!status.isOk) {
+                        errorRef.set(status.asRuntimeException(trailers))
+                    }
+                    latch.countDown()
+                }
+
+                override fun isCancelled(): Boolean = deadlineCtx.isCancelled
+
+                override fun getMethodDescriptor(): MethodDescriptor<ReqT, RespT> = descriptor
+            }
+
+            val listener = handler.startCall(call, headers)
+            listener.onReady()
+            while (true) {
+                val item = inbound.take()
+                val left = queued.decrementAndGet()
+                if (left == resumeAt) {
+                    onWritable?.invoke()
+                }
+                when (item) {
+                    HalfClose -> {
+                        listener.onHalfClose()
+                        break
+                    }
+                    is CancelSignal -> {
+                        listener.onCancel()
+                        break
+                    }
+                    else -> {
+                        @Suppress("UNCHECKED_CAST")
+                        listener.onMessage(item as ReqT)
+                    }
+                }
+            }
+
             if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
                 throw ConnectException(ConnectCode.DEADLINE_EXCEEDED, "RPC timed out after ${timeoutMs}ms")
             }
             errorRef.get()?.let { throw GrpcStatusMapping.toConnectException(it) }
-            return responseRef.get()
+            responseRef.get()
                 ?: throw ConnectException(
                     ConnectCode.INTERNAL,
                     "gRPC client-stream handler completed without a response message",
@@ -160,10 +156,6 @@ class OpenClientStream<ReqT, RespT> internal constructor(
 
         private val DEADLINE_SCHEDULER = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
             Thread(r, "connect-client-stream-deadline").apply { isDaemon = true }
-        }
-
-        private val WORKER = java.util.concurrent.Executors.newCachedThreadPool { r ->
-            Thread(r, "connect-client-stream-worker").apply { isDaemon = true }
         }
 
         private fun toMetadata(headers: Map<String, List<String>>): Metadata {

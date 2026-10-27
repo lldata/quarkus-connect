@@ -93,8 +93,12 @@ internal object StreamingRequestReader {
                 },
             )
         }
+        // Vert.x Web pauses until a body-consuming handler resumes.
         if (!req.isEnded) {
             req.resume()
+        } else {
+            // End already delivered while paused with no prior handler — treat as empty body.
+            complete()
         }
     }
 }

@@ -1,7 +1,6 @@
 package io.github.lldata.connect.runtime.grpc
 
 import io.github.lldata.connect.runtime.StreamCallControl
-import io.github.lldata.connect.runtime.security.ConnectSecuritySupport
 import io.github.lldata.connect.spi.ConnectCallContext
 import io.github.lldata.connect.spi.ConnectStreamObserver
 import io.grpc.ServerInterceptor
@@ -24,9 +23,9 @@ object GrpcBidiStreamInvoker {
         observer: ConnectStreamObserver<RespT>,
         callControl: StreamCallControl? = null,
         onWritable: (() -> Unit)? = null,
-    ): OpenBidiStream<ReqT, RespT> = ConnectSecuritySupport.withRequestContext {
+    ): OpenBidiStream<ReqT, RespT> {
         val typed = resolve(method, interceptors)
-        OpenBidiStream(
+        return OpenBidiStream(
             typed.methodDescriptor,
             typed.serverCallHandler,
             context,
@@ -49,6 +48,7 @@ object GrpcBidiStreamInvoker {
             session.send(request)
         }
         session.halfClose()
+        session.run()
     }
 
     private fun <ReqT, RespT> resolve(
