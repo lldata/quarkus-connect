@@ -8,6 +8,10 @@ version is tagged.
 
 ## [Unreleased]
 
+### Fixed
+- Connect unary GET is served only for methods with `idempotency_level = NO_SIDE_EFFECTS`
+  (otherwise HTTP 405 `Allow: POST`, matching connect-go) (#51)
+
 ### Added
 - Flutter example: TokenProvider, IdleAwareTimeout, and reading error trailers
   (`retry-after-seconds` on guest WhoAmI) (#45)
