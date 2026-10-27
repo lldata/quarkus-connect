@@ -36,9 +36,14 @@ object ConformanceMain {
         if (request.messageReceiveLimit != 0) {
             val limit = request.messageReceiveLimit.toLong()
             System.setProperty("quarkus.connect.max-inbound-message-size", limit.toString())
+            // Native gRPC (PROTOCOL_GRPC) uses quarkus-grpc's inbound limit, not Connect's.
+            System.setProperty("quarkus.grpc.server.max-inbound-message-size", limit.toString())
             // Unary bodies go through Vert.x BodyHandler; keep HTTP limit at least as large.
             System.setProperty("quarkus.http.limits.max-body-size", "${limit + 1024}B")
-            System.err.println("conformance host: message_receive_limit=$limit → quarkus.connect.max-inbound-message-size")
+            System.err.println(
+                "conformance host: message_receive_limit=$limit → " +
+                    "quarkus.connect.max-inbound-message-size + quarkus.grpc.server.max-inbound-message-size",
+            )
         }
         CompatState.port = port
         CompatState.request = request
