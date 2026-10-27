@@ -15,6 +15,7 @@ Implement `ConnectUnaryMethod<Req, Res>` as an `@ApplicationScoped` CDI bean:
 | --- | --- |
 | `procedure()` | `package.Service/Method` (no leading slash) |
 | `requestType()` / `responseType()` | Protobuf message classes |
+| `idempotencyLevel()` | Default `UNKNOWN`. Override to `NO_SIDE_EFFECTS` to allow Connect unary GET (bridged `@GrpcService` methods read protobuf `idempotency_level`) |
 | `handle(request, context)` | Returns the response or throws `ConnectException` |
 
 `ConnectCallContext` exposes request headers, timeout, and response header/trailer writers.

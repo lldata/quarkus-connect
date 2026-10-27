@@ -11,6 +11,10 @@ version is tagged.
 ### Changed
 - Development continues on `0.1.8-SNAPSHOT` after the `0.1.7` release
 
+### Fixed
+- Connect unary GET is served only for methods with `idempotency_level = NO_SIDE_EFFECTS`
+  (otherwise HTTP 405 `Allow: POST`, matching connect-go) (#51)
+
 ## [0.1.7] - 2026-10-27
 
 Promoted from `0.1.7-SNAPSHOT` (CI snapshot artifact; Publish workflow, no rebuild).

@@ -28,6 +28,9 @@ kotlin {
         apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
         languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
         freeCompilerArgs.add("-Xjdk-release=$jvmTargetVersion")
+        // Emit JVM default methods for Kotlin interface defaults (Java SPI implementors).
+        // Prefer -jvm-default=no-compatibility when languageVersion rises past 2.0.
+        freeCompilerArgs.add("-Xjvm-default=all")
         javaParameters.set(true)
     }
 }

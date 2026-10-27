@@ -17,6 +17,15 @@ interface ConnectUnaryMethod<Req : Message, Res : Message> {
 
     fun responseType(): Class<Res>
 
+    /**
+     * Idempotency declared for this procedure. Default [ConnectIdempotencyLevel.UNKNOWN].
+     *
+     * Connect serves unary GET only when this is [ConnectIdempotencyLevel.NO_SIDE_EFFECTS]
+     * (protocol parity with connect-go). Bridged `@GrpcService` methods read the value from
+     * protobuf `option idempotency_level` via gRPC [io.grpc.MethodDescriptor.isSafe].
+     */
+    fun idempotencyLevel(): ConnectIdempotencyLevel = ConnectIdempotencyLevel.UNKNOWN
+
     @Throws(ConnectException::class)
     fun handle(request: Req, context: ConnectCallContext): Res
 }

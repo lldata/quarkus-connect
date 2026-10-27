@@ -163,6 +163,38 @@ class GreetConnectTest {
     }
 
     @Test
+    fun `GET on unary without NO_SIDE_EFFECTS returns 405`() {
+        // Fail has no idempotency_level; connect-go answers 405 Allow: POST.
+        given()
+            .header("Authorization", auth)
+            .queryParam("encoding", "json")
+            .queryParam("message", """{"code":"internal","message":"no"}""")
+            .queryParam("connect", "v1")
+            .`when`()
+            .get("/greet.v1.GreetService/Fail")
+            .then()
+            .statusCode(405)
+            .header("Allow", equalTo("POST"))
+            .body(equalTo(""))
+    }
+
+    @Test
+    fun `GET on SPI unary without NO_SIDE_EFFECTS returns 405`() {
+        // Hand-written ConnectUnaryMethod defaults to UNKNOWN → no GET.
+        given()
+            .header("Authorization", auth)
+            .queryParam("encoding", "json")
+            .queryParam("message", """{"name":"Get"}""")
+            .queryParam("connect", "v1")
+            .`when`()
+            .get("/greet.v1.GreetService/Ping")
+            .then()
+            .statusCode(405)
+            .header("Allow", equalTo("POST"))
+            .body(equalTo(""))
+    }
+
+    @Test
     fun `GET unsupported encoding returns 415`() {
         given()
             .header("Authorization", auth)

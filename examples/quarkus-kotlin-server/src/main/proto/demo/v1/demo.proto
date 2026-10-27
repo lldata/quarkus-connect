@@ -8,7 +8,10 @@ option java_outer_classname = "DemoProto";
 
 // Shared with examples/flutter-web-client (same .proto → Dart + Kotlin stubs).
 service DemoService {
-  rpc Echo(EchoRequest) returns (EchoResponse);
+  // NO_SIDE_EFFECTS → Connect unary GET (see README curl example).
+  rpc Echo(EchoRequest) returns (EchoResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
 }
 

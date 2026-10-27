@@ -15,6 +15,7 @@ import io.github.lldata.connect.spi.ConnectCode
 import io.github.lldata.connect.spi.ConnectException
 import io.github.lldata.connect.spi.ConnectBidiStreamMethod
 import io.github.lldata.connect.spi.ConnectClientStreamMethod
+import io.github.lldata.connect.spi.ConnectIdempotencyLevel
 import io.github.lldata.connect.spi.ConnectServerStreamMethod
 import io.github.lldata.connect.spi.ConnectStreamObserver
 import io.github.lldata.connect.spi.ConnectUnaryMethod
@@ -69,7 +70,10 @@ class ConnectUnaryHttpHandler(
                 ctx.next()
                 return
             }
-            writeMethodNotAllowed(ctx, if (isStreamingProc) "POST" else "GET, POST")
+            writeMethodNotAllowed(
+                ctx,
+                if (isStreamingProc) "POST" else allowHeaderForUnary(unary),
+            )
             return
         }
 
@@ -166,6 +170,11 @@ class ConnectUnaryHttpHandler(
         }
 
         if (request.method() == HttpMethod.GET) {
+            // Connect GET only for NO_SIDE_EFFECTS (connect-go: otherwise 405 Allow: POST).
+            if (unary.idempotencyLevel() != ConnectIdempotencyLevel.NO_SIDE_EFFECTS) {
+                writeMethodNotAllowed(ctx, "POST")
+                return
+            }
             if (wire != WireProtocol.CONNECT) {
                 writeConnectError(ctx, ConnectException.invalidArgument("GET is only supported for Connect unary"))
                 return
@@ -1259,6 +1268,14 @@ class ConnectUnaryHttpHandler(
             .putHeader("Allow", allow)
             .end()
     }
+
+    /** Allow list for unary: GET only when [ConnectIdempotencyLevel.NO_SIDE_EFFECTS]. */
+    private fun allowHeaderForUnary(method: ConnectUnaryMethod<*, *>?): String =
+        if (method != null && method.idempotencyLevel() == ConnectIdempotencyLevel.NO_SIDE_EFFECTS) {
+            "GET, POST"
+        } else {
+            "POST"
+        }
 
     /** HTTP 415 with Accept-Post; empty body so clients map status → [ConnectCode.UNKNOWN]. */
     private fun writeUnsupportedMediaType(ctx: RoutingContext, acceptPost: String) {

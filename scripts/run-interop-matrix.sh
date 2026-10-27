@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Build the example uber-jar, start it, run scripts/interop-matrix.sh, tear down.
+# Start the example uber-jar (built by Gradle interopMatrix → quarkusBuild),
+# run scripts/interop-matrix.sh, tear down.
+# Do not nest ./gradlew here: a nested build rewrites :quarkus-connect:jar while
+# parallel :integration-tests:test may still be reading it (CI Zip EOF flake).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-
-./gradlew :examples:quarkus-kotlin-server:quarkusBuild \
-  -Dquarkus.package.jar.type=uber-jar \
-  --quiet
 
 VERSION="$(sed -n 's/^version=//p' gradle.properties)"
 JAR="$ROOT/examples/quarkus-kotlin-server/build/quarkus-kotlin-server-${VERSION}-runner.jar"
@@ -14,7 +13,7 @@ if [[ ! -f "$JAR" ]]; then
   JAR="$(ls -1 "$ROOT"/examples/quarkus-kotlin-server/build/*-runner.jar 2>/dev/null | head -n1 || true)"
 fi
 if [[ -z "${JAR}" || ! -f "$JAR" ]]; then
-  echo "Missing example uber-jar after quarkusBuild" >&2
+  echo "Missing example uber-jar. Run: ./gradlew :examples:quarkus-kotlin-server:quarkusBuild" >&2
   exit 1
 fi
 LOG="$ROOT/examples/quarkus-kotlin-server/build/interop-server.log"

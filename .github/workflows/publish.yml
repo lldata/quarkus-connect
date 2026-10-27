@@ -11,6 +11,11 @@ on:
         description: 'Type "promote" to publish the newest main SNAPSHOT to Central'
         required: true
         type: string
+      github_only:
+        description: 'true = tag + draft GH release only (Central already VALIDATED; skip Portal upload)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   promote:
@@ -33,6 +38,11 @@ jobs:
           fetch-depth: 0
           ref: main
 
+      - name: Configure git identity for annotated tags and commits
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Resolve newest snapshot on main
         id: ver
         run: |
@@ -48,12 +58,18 @@ jobs:
             exit 1
           fi
           sha=$(git rev-parse HEAD)
+          github_only="${{ github.event.inputs.github_only }}"
           {
             echo "snapshot=$snapshot"
             echo "release=$release"
             echo "sha=$sha"
+            echo "github_only=$github_only"
           } >> "$GITHUB_OUTPUT"
-          echo "Promoting $snapshot → $release at $sha"
+          if [[ "$github_only" == "true" ]]; then
+            echo "github_only: tagging $release at $sha (no Central upload)"
+          else
+            echo "Promoting $snapshot → $release at $sha"
+          fi
 
       - uses: actions/setup-java@v6
         with:
@@ -61,6 +77,7 @@ jobs:
           java-version: "21"
 
       - name: Require the publishing secrets
+        if: ${{ github.event.inputs.github_only != 'true' }}
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
@@ -124,6 +141,7 @@ jobs:
           echo "SNAPSHOT_REPO=$RUNNER_TEMP/snapshot-repo" >> "$GITHUB_ENV"
 
       - name: Import signing key
+        if: ${{ github.event.inputs.github_only != 'true' }}
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
@@ -141,30 +159,42 @@ jobs:
         env:
           SNAPSHOT: ${{ steps.ver.outputs.snapshot }}
           RELEASE: ${{ steps.ver.outputs.release }}
+          GITHUB_ONLY: ${{ steps.ver.outputs.github_only }}
         run: |
           set -euo pipefail
-          # Wrap gpg so the promote script signs with the imported key + passphrase.
-          export PATH="$RUNNER_TEMP/bin:$PATH"
-          mkdir -p "$RUNNER_TEMP/bin"
-          printf '%s\n' \
-            '#!/usr/bin/env bash' \
-            'exec /usr/bin/gpg --batch --yes --pinentry-mode loopback \' \
-            '  --passphrase-file "${GPG_PASSPHRASE_FILE}" \' \
-            '  --local-user "${GPG_KEY_ID}" "$@"' \
-            >"$RUNNER_TEMP/bin/gpg"
-          chmod +x "$RUNNER_TEMP/bin/gpg"
-
           out="$RUNNER_TEMP/promoted"
-          ./scripts/promote-snapshot-repo.sh \
-            --snapshot-repo "$SNAPSHOT_REPO" \
-            --snapshot-version "$SNAPSHOT" \
-            --release-version "$RELEASE" \
-            --out-dir "$out"
+          if [[ "$GITHUB_ONLY" == "true" ]]; then
+            # Jars for the draft GH release only — Central already has the signed bundle.
+            ./scripts/promote-snapshot-repo.sh \
+              --snapshot-repo "$SNAPSHOT_REPO" \
+              --snapshot-version "$SNAPSHOT" \
+              --release-version "$RELEASE" \
+              --out-dir "$out" \
+              --skip-sign
+          else
+            # Wrap gpg so the promote script signs with the imported key + passphrase.
+            export PATH="$RUNNER_TEMP/bin:$PATH"
+            mkdir -p "$RUNNER_TEMP/bin"
+            printf '%s\n' \
+              '#!/usr/bin/env bash' \
+              'exec /usr/bin/gpg --batch --yes --pinentry-mode loopback \' \
+              '  --passphrase-file "${GPG_PASSPHRASE_FILE}" \' \
+              '  --local-user "${GPG_KEY_ID}" "$@"' \
+              >"$RUNNER_TEMP/bin/gpg"
+            chmod +x "$RUNNER_TEMP/bin/gpg"
+
+            ./scripts/promote-snapshot-repo.sh \
+              --snapshot-repo "$SNAPSHOT_REPO" \
+              --snapshot-version "$SNAPSHOT" \
+              --release-version "$RELEASE" \
+              --out-dir "$out"
+          fi
           echo "bundle=$out/central-bundle.zip" >> "$GITHUB_OUTPUT"
           echo "jars=$out/jars" >> "$GITHUB_OUTPUT"
 
       - name: Upload promoted bundle to Central Portal
         id: upload
+        if: ${{ github.event.inputs.github_only != 'true' }}
         env:
           USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -188,6 +218,7 @@ jobs:
           echo "Uploaded deployment $id"
 
       - name: Report the deployment status
+        if: ${{ github.event.inputs.github_only != 'true' }}
         env:
           DEPLOYMENT_ID: ${{ steps.upload.outputs.deployment_id }}
         run: |
@@ -221,6 +252,7 @@ jobs:
           SHA: ${{ steps.ver.outputs.sha }}
           SNAPSHOT: ${{ steps.ver.outputs.snapshot }}
           JARS: ${{ steps.promote.outputs.jars }}
+          GITHUB_ONLY: ${{ steps.ver.outputs.github_only }}
         run: |
           set -euo pipefail
           tag="v${RELEASE}"
@@ -231,7 +263,11 @@ jobs:
             echo "Promoted \`${SNAPSHOT}\` at \`${SHA}\` to Maven coordinates"
             echo "\`io.github.lldata:quarkus-connect:${RELEASE}\` (no rebuild)."
             echo
-            echo "Central Portal deployment is **USER_MANAGED** — press Publish at"
+            if [[ "$GITHUB_ONLY" == "true" ]]; then
+              echo "Central Portal was already **VALIDATED** for this version — press Publish at"
+            else
+              echo "Central Portal deployment is **USER_MANAGED** — press Publish at"
+            fi
             echo "https://central.sonatype.com/publishing when ready."
             echo
             echo "## Changelog"
@@ -268,8 +304,6 @@ jobs:
           IFS=. read -r maj min pat <<<"$RELEASE"
           next="${maj}.${min}.$((pat + 1))-SNAPSHOT"
           branch="cursor/post-release-${RELEASE}-a260"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$branch" "$SHA"
           today=$(date -u +%F)
           # gradle.properties: record released line then move main to next SNAPSHOT.
