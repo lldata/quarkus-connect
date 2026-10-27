@@ -2,6 +2,7 @@ package io.github.lldata.connect.deployment;
 
 import io.github.lldata.connect.runtime.ConnectMethodRegistry;
 import io.github.lldata.connect.runtime.ConnectRouteRegistrar;
+import io.github.lldata.connect.runtime.grpc.ConnectGrpcMaxInboundInterceptor;
 import io.github.lldata.connect.runtime.grpc.GrpcServiceConnectBridge;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.deployment.annotations.BuildStep;
@@ -26,7 +27,8 @@ class ConnectProcessor {
                 .addBeanClasses(
                         ConnectRouteRegistrar.class,
                         ConnectMethodRegistry.class,
-                        GrpcServiceConnectBridge.class)
+                        GrpcServiceConnectBridge.class,
+                        ConnectGrpcMaxInboundInterceptor.class)
                 .setUnremovable()
                 .build();
     }
