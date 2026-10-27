@@ -42,15 +42,29 @@ dependencies {
 /**
  * Black-box Connect curl matrix against this example's uber-jar.
  * Wired into `check` so CI (`./gradlew check`) covers live interop without a separate workflow.
+ * Depends on quarkusBuild in this same Gradle invocation — do not nest ./gradlew in the
+ * script (that rewrote :quarkus-connect:jar under parallel IT; see #52).
  */
 tasks.register<Exec>("interopMatrix") {
     group = "verification"
     description = "Build example uber-jar and run scripts/run-interop-matrix.sh"
-    dependsOn(":quarkus-connect:jar")
+    dependsOn("quarkusBuild")
     workingDir = rootProject.projectDir
     commandLine("bash", "scripts/run-interop-matrix.sh")
 }
 
 tasks.named("check") {
     dependsOn("interopMatrix")
+}
+
+// Belt-and-suspenders with the same-build quarkusBuild: keep example packaging after ITs
+// so parallel project execution cannot race SharedArchivePathTree on the runtime jar.
+gradle.projectsEvaluated {
+    val itTest = rootProject.findProject(":integration-tests")?.tasks?.findByName("test")
+    val secTest = rootProject.findProject(":integration-tests-security")?.tasks?.findByName("test")
+    listOfNotNull(tasks.findByName("quarkusBuild"), tasks.findByName("interopMatrix")).forEach { downstream ->
+        listOfNotNull(itTest, secTest).forEach { upstream ->
+            downstream.mustRunAfter(upstream)
+        }
+    }
 }
