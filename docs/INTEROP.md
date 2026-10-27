@@ -63,4 +63,4 @@ Remove a known-failing entry when it starts passing — the runner requires thos
 
 - `connect-timeout-ms` must be a positive integer ≤ 10 digits (invalid → `invalid_argument`)
 - Server/bidi streams attach a `StreamCallControl`: HTTP response close/exception cancels the gRPC `Context`
-- Client/bidi still buffer the request body (vertical slice; tracked in #43); interactive duplex is a later hardening item
+- Client/bidi stream request envelopes as they arrive (#43); interactive full-duplex conformance remains a later hardening item

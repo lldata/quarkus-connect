@@ -47,9 +47,10 @@ Preferred: ordinary Quarkus `@GrpcService` beans. Low-level CDI beans implementi
 `ConnectUnaryMethod` / `ConnectServerStreamMethod` / `ConnectClientStreamMethod` /
 `ConnectBidiStreamMethod` remain supported (see integration-tests `PingConnectMethod`).
 
-Client/bidi Connect handlers buffer the HTTP request body for the vertical slice (fine for
-demos; large or interactive streams can move to chunked reads later). Native `application/grpc`
-still reaches quarkus-grpc.
+Client/bidi Connect and gRPC-Web handlers stream request envelopes into the gRPC
+`StreamObserver` as they arrive (Vert.x pause/resume when the inbound queue is full).
+Unary and server-streaming still buffer the (single) request message via Vert.x
+`BodyHandler`. Native `application/grpc` still reaches quarkus-grpc.
 
 ## Clients (not this extension)
 

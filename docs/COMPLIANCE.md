@@ -15,8 +15,8 @@ in-repo so external users see the same floor.
 | Content-Encoding / compression | **identity + gzip** | Unary `Content-Encoding` / GET `compression=` / stream `connect-content-encoding`; response negotiation via `Accept-Encoding` / `connect-accept-encoding`. Other codings (br, zstd, …) → `unimplemented` |
 | Accept-Encoding advertisement | **Yes** | Unary `Accept-Encoding: gzip, identity`; streaming `connect-accept-encoding: gzip, identity` |
 | Server streaming `application/connect+*` | **Yes** | End-stream envelope on completion/error; unsupported stream encoding → end-stream `unimplemented` |
-| Client streaming over Connect | **Yes** | `@GrpcService` `CLIENT_STREAMING`; buffered request body (vertical slice) |
-| Bidi streaming over Connect | **Yes** | `@GrpcService` `BIDI_STREAMING`; buffered request body (vertical slice) |
+| Client streaming over Connect | **Yes** | `@GrpcService` `CLIENT_STREAMING`; envelopes streamed to gRPC as they arrive |
+| Bidi streaming over Connect | **Yes** | `@GrpcService` `BIDI_STREAMING`; envelopes streamed to gRPC as they arrive |
 | gRPC-Web unary + streaming | **Yes** | `+proto` / `+json`; gzip frames; H1 + H2 h2c conformance green |
 | HTTP/2 cleartext (h2c) | **Yes** | Connect + gRPC-Web + native gRPC (proto) in conformance |
 | Native gRPC on same port | **Yes** | `quarkus.grpc.server.use-separate-server=false`; conformance `PROTOCOL_GRPC` (proto; JSON excluded). Error-detail trailers still padded by Vert.x `Utils.writeMetadata` (known-flaky) |
@@ -38,7 +38,7 @@ in-repo so external users see the same floor.
 
 ## Deliberately later / human
 
-- Streaming request body without full buffering (large client/bidi streams; interactive half-close)
+- Interactive full-duplex half-close timing / conformance full-duplex bidi (HTTP layer streams inbound; duplex interleaving polish later)
 - **Brotli (`br`) / zstd** — deferred: JDK has no brotli API; portable codecs need native libs
   (e.g. brotli4j + platform classifiers), which is a poor fit for a Central-published extension.
   Prefer edge/Quarkus HTTP `br` for whole responses; Connect message coding stays `gzip` + `identity`.

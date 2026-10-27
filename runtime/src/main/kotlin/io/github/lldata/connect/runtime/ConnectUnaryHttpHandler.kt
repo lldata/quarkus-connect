@@ -367,28 +367,12 @@ class ConnectUnaryHttpHandler(
             return
         }
         val headers = collectHeaders(ctx)
-        val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
-
-        val requestPayloads = try {
-            ConnectEnvelope.decodeAllDataMessages(body, requestEncoding, maxInboundMessageSize)
-        } catch (e: ConnectException) {
-            writeConnectStreamError(ctx, e, contentType, responseEncoding)
-            return
-        }
-
         val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs)
         val responseCt = ConnectEnvelope.normalizeContentType(contentType)
+        val finished = AtomicBoolean(false)
 
-        ctx.vertx().executeBlocking(
-            java.util.concurrent.Callable {
-                @Suppress("UNCHECKED_CAST")
-                val typed = method as ConnectClientStreamMethod<Message, Message>
-                val requests = requestPayloads.map { codecs.parse(it, typed.requestType(), codec) }
-                val responseMessage = typed.handle(requests, callContext)
-                codecs.encode(responseMessage, codec)
-            },
-            false,
-        ).onComplete { ar ->
+        fun writeClientStreamResult(payload: ByteArray?, error: ConnectException?) {
+            if (!finished.compareAndSet(false, true)) return
             val response = ctx.response()
                 .setStatusCode(200)
                 .putHeader(HttpHeaders.CONTENT_TYPE, responseCt)
@@ -397,19 +381,31 @@ class ConnectUnaryHttpHandler(
                 response.putHeader(ConnectProtocolConstants.STREAMING_CONTENT_ENCODING_HEADER, responseEncoding)
             }
             writeStreamResponseHeaders(response, callContext)
-            if (ar.succeeded()) {
-                val data = ConnectEnvelope.encodeDataMaybeCompressed(ar.result(), responseEncoding)
-                val end = ConnectEnvelope.encodeEndStream(null, callContext.snapshotTrailers())
-                response.end(io.vertx.core.buffer.Buffer.buffer(data + end))
-            } else {
-                val error = GrpcStatusMapping.toConnectException(ar.cause())
+            if (error != null || payload == null) {
                 response.end(
                     io.vertx.core.buffer.Buffer.buffer(
                         ConnectEnvelope.encodeEndStream(error, callContext.snapshotTrailers()),
                     ),
                 )
+            } else {
+                val data = ConnectEnvelope.encodeDataMaybeCompressed(payload, responseEncoding)
+                val end = ConnectEnvelope.encodeEndStream(null, callContext.snapshotTrailers())
+                response.end(io.vertx.core.buffer.Buffer.buffer(data + end))
             }
         }
+
+        ClientBidiInbound.handleClientStream(
+            ctx = ctx,
+            method = method,
+            callContext = callContext,
+            codecs = codecs,
+            codec = codec,
+            mode = io.github.lldata.connect.protocol.IncrementalEnvelopeParser.Mode.CONNECT,
+            requestEncoding = requestEncoding,
+            maxInboundMessageSize = maxInboundMessageSize,
+            onResponse = { bytes -> writeClientStreamResult(bytes, null) },
+            onError = { err -> writeClientStreamResult(null, err) },
+        )
     }
 
     private fun handleConnectBidiStream(
@@ -452,15 +448,6 @@ class ConnectUnaryHttpHandler(
             return
         }
         val headers = collectHeaders(ctx)
-        val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
-
-        val requestPayloads = try {
-            ConnectEnvelope.decodeAllDataMessages(body, requestEncoding, maxInboundMessageSize)
-        } catch (e: ConnectException) {
-            writeConnectStreamError(ctx, e, contentType, responseEncoding)
-            return
-        }
-
         val callControl = StreamCallControl()
         val clientGone = AtomicBoolean(false)
         val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs, callControl)
@@ -527,34 +514,33 @@ class ConnectUnaryHttpHandler(
             }
         }
 
-        ctx.vertx().executeBlocking(
-            java.util.concurrent.Callable {
-                @Suppress("UNCHECKED_CAST")
-                val typed = method as ConnectBidiStreamMethod<Message, Message>
-                val requests = requestPayloads.map { codecs.parse(it, typed.requestType(), codec) }
-                val observer = object : ConnectStreamObserver<Message> {
-                    override fun onNext(value: Message) {
-                        val payload = codecs.encode(value, codec)
-                        writeEnvelope(ConnectEnvelope.encodeDataMaybeCompressed(payload, responseEncoding))
-                    }
+        val observer = object : ConnectStreamObserver<Message> {
+            override fun onNext(value: Message) {
+                val payload = codecs.encode(value, codec)
+                writeEnvelope(ConnectEnvelope.encodeDataMaybeCompressed(payload, responseEncoding))
+            }
 
-                    override fun onError(error: ConnectException) {
-                        endWith(error)
-                    }
+            override fun onError(error: ConnectException) {
+                endWith(error)
+            }
 
-                    override fun onCompleted() {
-                        endWith(null)
-                    }
-                }
-                typed.handle(requests, callContext, observer)
-                null
-            },
-            false,
-        ).onComplete { ar ->
-            if (ar.failed() && !clientGone.get()) {
-                endWith(GrpcStatusMapping.toConnectException(ar.cause()))
+            override fun onCompleted() {
+                endWith(null)
             }
         }
+
+        ClientBidiInbound.handleBidiStream(
+            ctx = ctx,
+            method = method,
+            callContext = callContext,
+            codecs = codecs,
+            codec = codec,
+            mode = io.github.lldata.connect.protocol.IncrementalEnvelopeParser.Mode.CONNECT,
+            requestEncoding = requestEncoding,
+            maxInboundMessageSize = maxInboundMessageSize,
+            observer = observer,
+            onInboundError = { err -> endWith(err) },
+        )
     }
 
     private fun handleGrpcWebServerStream(
@@ -711,26 +697,11 @@ class ConnectUnaryHttpHandler(
         val timeoutMs = parseTimeout(ctx.request().getHeader("grpc-timeout"))
             ?: parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
         val headers = collectHeaders(ctx)
-        val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
-        val requestPayloads = try {
-            GrpcWebFraming.decodeAllDataMessages(body, requestEncoding, maxInboundMessageSize)
-        } catch (e: ConnectException) {
-            writeGrpcWebError(ctx, e, contentType)
-            return
-        }
-
         val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs)
+        val finished = AtomicBoolean(false)
 
-        ctx.vertx().executeBlocking(
-            java.util.concurrent.Callable {
-                @Suppress("UNCHECKED_CAST")
-                val typed = method as ConnectClientStreamMethod<Message, Message>
-                val requests = requestPayloads.map { codecs.parse(it, typed.requestType(), codec) }
-                val responseMessage = typed.handle(requests, callContext)
-                codecs.encode(responseMessage, codec)
-            },
-            false,
-        ).onComplete { ar ->
+        fun writeGrpcWebClientResult(payload: ByteArray?, error: ConnectException?) {
+            if (!finished.compareAndSet(false, true)) return
             val response = ctx.response()
                 .setStatusCode(200)
                 .putHeader(HttpHeaders.CONTENT_TYPE, normalizeGrpcWebContentType(contentType))
@@ -739,20 +710,32 @@ class ConnectUnaryHttpHandler(
                 response.putHeader("grpc-encoding", responseEncoding)
             }
             writeStreamResponseHeaders(response, callContext)
-            if (ar.succeeded()) {
-                val data = GrpcWebFraming.encodeDataMaybeCompressed(ar.result(), responseEncoding)
-                val trailer = GrpcWebFraming.encodeTrailerFrame(0, null, callContext.snapshotTrailers())
-                response.end(io.vertx.core.buffer.Buffer.buffer(data + trailer))
-            } else {
-                val error = GrpcStatusMapping.toConnectException(ar.cause())
+            if (error != null) {
                 val status = GrpcStatusMapping.toGrpcStatus(error.code).value()
                 response.end(
                     io.vertx.core.buffer.Buffer.buffer(
                         GrpcWebFraming.encodeTrailerFrame(status, error.message, callContext.snapshotTrailers()),
                     ),
                 )
+            } else {
+                val data = GrpcWebFraming.encodeDataMaybeCompressed(payload!!, responseEncoding)
+                val trailer = GrpcWebFraming.encodeTrailerFrame(0, null, callContext.snapshotTrailers())
+                response.end(io.vertx.core.buffer.Buffer.buffer(data + trailer))
             }
         }
+
+        ClientBidiInbound.handleClientStream(
+            ctx = ctx,
+            method = method,
+            callContext = callContext,
+            codecs = codecs,
+            codec = codec,
+            mode = io.github.lldata.connect.protocol.IncrementalEnvelopeParser.Mode.GRPC_WEB,
+            requestEncoding = requestEncoding,
+            maxInboundMessageSize = maxInboundMessageSize,
+            onResponse = { bytes -> writeGrpcWebClientResult(bytes, null) },
+            onError = { err -> writeGrpcWebClientResult(null, err) },
+        )
     }
 
     private fun handleGrpcWebBidiStream(
@@ -778,14 +761,6 @@ class ConnectUnaryHttpHandler(
         val timeoutMs = parseTimeout(ctx.request().getHeader("grpc-timeout"))
             ?: parseTimeout(ctx.request().getHeader(ConnectProtocolConstants.TIMEOUT_HEADER))
         val headers = collectHeaders(ctx)
-        val body = ctx.body().buffer()?.bytes ?: ByteArray(0)
-        val requestPayloads = try {
-            GrpcWebFraming.decodeAllDataMessages(body, requestEncoding, maxInboundMessageSize)
-        } catch (e: ConnectException) {
-            writeGrpcWebError(ctx, e, contentType)
-            return
-        }
-
         val callControl = StreamCallControl()
         val clientGone = AtomicBoolean(false)
         val callContext = DefaultConnectCallContext(procedure, codec, headers, timeoutMs, callControl)
@@ -856,34 +831,33 @@ class ConnectUnaryHttpHandler(
             }
         }
 
-        ctx.vertx().executeBlocking(
-            java.util.concurrent.Callable {
-                @Suppress("UNCHECKED_CAST")
-                val typed = method as ConnectBidiStreamMethod<Message, Message>
-                val requests = requestPayloads.map { codecs.parse(it, typed.requestType(), codec) }
-                val observer = object : ConnectStreamObserver<Message> {
-                    override fun onNext(value: Message) {
-                        val payload = codecs.encode(value, codec)
-                        writeFrame(GrpcWebFraming.encodeDataMaybeCompressed(payload, responseEncoding))
-                    }
+        val observer = object : ConnectStreamObserver<Message> {
+            override fun onNext(value: Message) {
+                val payload = codecs.encode(value, codec)
+                writeFrame(GrpcWebFraming.encodeDataMaybeCompressed(payload, responseEncoding))
+            }
 
-                    override fun onError(error: ConnectException) {
-                        endWith(error)
-                    }
+            override fun onError(error: ConnectException) {
+                endWith(error)
+            }
 
-                    override fun onCompleted() {
-                        endWith(null)
-                    }
-                }
-                typed.handle(requests, callContext, observer)
-                null
-            },
-            false,
-        ).onComplete { ar ->
-            if (ar.failed() && !clientGone.get()) {
-                endWith(GrpcStatusMapping.toConnectException(ar.cause()))
+            override fun onCompleted() {
+                endWith(null)
             }
         }
+
+        ClientBidiInbound.handleBidiStream(
+            ctx = ctx,
+            method = method,
+            callContext = callContext,
+            codecs = codecs,
+            codec = codec,
+            mode = io.github.lldata.connect.protocol.IncrementalEnvelopeParser.Mode.GRPC_WEB,
+            requestEncoding = requestEncoding,
+            maxInboundMessageSize = maxInboundMessageSize,
+            observer = observer,
+            onInboundError = { err -> endWith(err) },
+        )
     }
 
     private fun writeConnectStreamError(

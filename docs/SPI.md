@@ -58,8 +58,9 @@ Implement `ConnectClientStreamMethod<Req, Res>`:
 | --- | --- |
 | `handle(requests, context)` | Receives the full list of request messages; returns one response |
 
-Same `application/connect+*` Content-Types. The HTTP handler buffers the request body for this
-vertical slice (fine for demos; large uploads can move to chunked reads later).
+Same `application/connect+*` Content-Types. The HTTP layer streams envelopes as they arrive;
+CDI SPI beans still receive a collected `List` after decode (gRPC `@GrpcService` bridges feed
+`onMessage` incrementally).
 
 ## Bidirectional streaming
 
@@ -69,7 +70,7 @@ Implement `ConnectBidiStreamMethod<Req, Res>`:
 | --- | --- |
 | `handle(requests, context, response)` | Full request list in; push responses via `ConnectStreamObserver` |
 
-Same buffered-body vertical slice as client streaming.
+Same HTTP streaming + SPI list contract as client streaming.
 
 ## Errors
 
