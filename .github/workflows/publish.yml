@@ -14,6 +14,12 @@ jobs:
     # Only the canonical repository holds the publishing secrets.
     if: github.repository == 'lldata/quarkus-connect'
 
+    # Path B credentials live on the GitHub Environment named `publish`
+    # (Settings → Environments → publish → Environment secrets), not only
+    # repository-level Actions secrets. Job must declare the environment so
+    # secrets.SIGNING_* / MAVEN_CENTRAL_* resolve.
+    environment: publish
+
     permissions:
       contents: write
 
@@ -41,7 +47,8 @@ jobs:
             [ -n "${!name}" ] || missing="$missing $name"
           done
           if [ -n "$missing" ]; then
-            echo "::error::No value for repository secret(s):$missing"
+            echo "::error::No value for Environment 'publish' secret(s):$missing"
+            echo "::error::Set them under Settings → Environments → publish (or gh secret set --env publish)."
             exit 1
           fi
 
