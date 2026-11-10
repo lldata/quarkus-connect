@@ -11,7 +11,7 @@ pluginManagement {
         id("org.jetbrains.kotlin.jvm") version kotlinVersion
         id("org.jetbrains.kotlin.plugin.allopen") version kotlinVersion
         // 0.10.x required for Gradle 9 (detachedConfiguration extension error on 0.9.x)
-        id("com.google.protobuf") version "0.10.0"
+        id("com.google.protobuf") version "0.10.1"
     }
 }
 
