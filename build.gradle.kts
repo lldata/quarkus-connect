@@ -12,7 +12,7 @@ plugins {
     id("com.google.protobuf") apply false
     // Publishing: applied only to the two published modules below.
     id("com.vanniktech.maven.publish") version "0.37.0" apply false
-    id("org.jetbrains.dokka") version "2.2.0" apply false
+    id("org.jetbrains.dokka") version "2.3.0" apply false
 }
 
 allprojects {
